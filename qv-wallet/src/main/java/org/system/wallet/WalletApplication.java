@@ -1,4 +1,4 @@
-package com.thesis.wallet;
+package org.system.wallet;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
