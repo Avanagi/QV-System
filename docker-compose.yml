@@ -1,0 +1,117 @@
+version: '3.8'
+
+# Описываем сети. Все сервисы должны быть в одной сети, чтобы видеть друг друга по имени.
+networks:
+  qv-network:
+    driver: bridge
+
+# Описываем тома (Volumes) для сохранения данных при перезапуске
+volumes:
+  postgres_data:
+
+services:
+  # --- ИНФРАСТРУКТУРА ---
+
+  # 1. База Данных (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: qv-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      # Основная БД (создается по умолчанию, мы добавим еще две скриптом)
+      POSTGRES_DB: qv_main
+    ports:
+      - "5432:5432" # Проброс порта наружу, чтобы ты мог подключиться через IntelliJ IDEA / DBeaver
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Монтируем скрипт инициализации, он выполнится при первом запуске
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - qv-network
+
+  # 2. Брокер Сообщений (RabbitMQ)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: qv-rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"   # Порт для общения сервисов
+      - "15672:15672" # Порт для веб-интерфейса (http://localhost:15672)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - qv-network
+
+  # 3. Zipkin (Опционально, для Трассировки запросов - круто для диплома)
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: qv-zipkin
+    ports:
+      - "9411:9411"
+    networks:
+      - qv-network
+
+  # --- МИКРОСЕРВИСЫ (JAVA) ---
+
+  # Примечание: Раскомментируй эти сервисы, когда напишешь Dockerfile для них.
+  # На этапе разработки (пока пишешь код) лучше запускать инфраструктуру в Docker,
+  # а Java-приложения прямо в IDE.
+
+  # 4. Service Discovery (Eureka)
+  # discovery:
+  #   build: ./qv-discovery
+  #   container_name: qv-discovery
+  #   ports:
+  #     - "8761:8761"
+  #   networks:
+  #     - qv-network
+
+  # 5. Gateway (API Gateway)
+  # gateway:
+  #   build: ./qv-gateway
+  #   container_name: qv-gateway
+  #   ports:
+  #     - "8080:8080" # Единая точка входа для пользователей и Locust
+  #   environment:
+  #     EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+  #   depends_on:
+  #     - discovery
+  #   networks:
+  #     - qv-network
+
+  # 6. Voting Service (Ядро)
+  # voting-service:
+  #   build: ./qv-voting
+  #   container_name: qv-voting
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/voting_db
+  #     SPRING_DATASOURCE_USERNAME: admin
+  #     SPRING_DATASOURCE_PASSWORD: password
+  #     SPRING_RABBITMQ_HOST: rabbitmq
+  #     EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+  #   depends_on:
+  #     - postgres
+  #     - rabbitmq
+  #     - discovery
+  #   networks:
+  #     - qv-network
+
+  # 7. Wallet Service (Кошелек)
+  # wallet-service:
+  #   build: ./qv-wallet
+  #   container_name: qv-wallet
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/wallet_db
+  #     SPRING_DATASOURCE_USERNAME: admin
+  #     SPRING_DATASOURCE_PASSWORD: password
+  #     SPRING_RABBITMQ_HOST: rabbitmq
+  #     EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+  #   depends_on:
+  #     - postgres
+  #     - rabbitmq
+  #     - discovery
+  #   networks:
+  #     - qv-network

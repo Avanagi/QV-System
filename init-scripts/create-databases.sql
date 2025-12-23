@@ -1,0 +1,2 @@
+CREATE DATABASE voting_db;
+CREATE DATABASE wallet_db;
