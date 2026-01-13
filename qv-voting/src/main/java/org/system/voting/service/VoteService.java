@@ -49,4 +49,24 @@ public class VoteService {
 
         return savedVote;
     }
+
+    @Transactional
+    public void confirmVote(Long voteId) {
+        Vote vote = voteRepository.findById(voteId).orElse(null);
+        if (vote != null && vote.getStatus() == VoteStatus.PENDING) {
+            vote.setStatus(VoteStatus.CONFIRMED);
+            voteRepository.save(vote);
+            log.info(">>> SAGA FINISHED: Голос {} подтвержден и оплачен! <<<", voteId);
+        }
+    }
+
+    @Transactional
+    public void cancelVote(Long voteId, String reason) {
+        Vote vote = voteRepository.findById(voteId).orElse(null);
+        if (vote != null) {
+            vote.setStatus(VoteStatus.REJECTED);
+            voteRepository.save(vote);
+            log.warn(">>> SAGA FAILED: Голос {} отклонен. Причина: {} <<<", voteId, reason);
+        }
+    }
 }
