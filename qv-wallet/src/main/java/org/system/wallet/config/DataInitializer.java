@@ -17,7 +17,7 @@ public class DataInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) {
         if (!walletRepository.existsById(101L)) {
-            walletRepository.save(new Wallet(101L, new BigDecimal("1000.00")));
+            walletRepository.save(new Wallet(101L, new BigDecimal("1000000.00")));
             System.out.println(">>> WALLET CREATED: User 101 has 1000 credits <<<");
         }
     }

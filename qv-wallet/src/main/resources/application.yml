@@ -26,5 +26,5 @@ eureka:
 
 app:
   chaos:
-    enabled: false
+    enabled: true
     rate: 0.2

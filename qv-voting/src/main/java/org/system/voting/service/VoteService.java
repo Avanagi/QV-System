@@ -11,6 +11,9 @@ import org.system.voting.dto.VoteRequest;
 import org.system.voting.entity.Vote;
 import org.system.voting.entity.VoteStatus;
 import org.system.voting.repository.VoteRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
 
@@ -22,30 +25,57 @@ public class VoteService {
     private final VoteRepository voteRepository;
     private final RabbitTemplate rabbitTemplate;
 
+    @Value("${app.architecture:async}")
+    private String architectureMode;
+
+    @Value("${app.wallet-url}")
+    private String walletUrl;
+
+    private final RestClient restClient = RestClient.create();
+
+
     @Transactional
     public Vote createVote(VoteRequest request) {
         log.info("Принят голос от User: {}", request.getUserId());
 
         double costValue = Math.pow(request.getVoteCount(), 2);
+        BigDecimal cost = BigDecimal.valueOf(costValue);
 
         Vote vote = new Vote();
         vote.setUserId(request.getUserId());
         vote.setProjectId(request.getProjectId());
         vote.setVoteCount(request.getVoteCount());
         vote.setCost(costValue);
-        vote.setStatus(VoteStatus.PENDING); // Ждем оплаты
-
+        vote.setStatus(VoteStatus.PENDING);
         Vote savedVote = voteRepository.save(vote);
+
         log.info("Голос сохранен с ID: {}. Стоимость: {}. Ждем оплаты...", savedVote.getId(), costValue);
 
-        VoteCreatedEvent event = new VoteCreatedEvent(
-                savedVote.getId(),
-                savedVote.getUserId(),
-                BigDecimal.valueOf(costValue)
-        );
+        if ("async".equalsIgnoreCase(architectureMode)) {
+            VoteCreatedEvent event = new VoteCreatedEvent(savedVote.getId(), savedVote.getUserId(), cost);
+            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "vote.created", event);
+            log.info("Async mode: Sent to RabbitMQ");
 
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "vote.created", event);
-        log.info("Событие отправлено в RabbitMQ");
+        } else {
+            log.info("Sync mode: Calling Wallet via HTTP...");
+            try {
+
+                var response = restClient.post()
+                        .uri(walletUrl + "?userId=" + request.getUserId() + "&amount=" + cost)
+                        .retrieve()
+                        .toBodilessEntity();
+
+                if (response.getStatusCode().is2xxSuccessful()) {
+                    savedVote.setStatus(VoteStatus.CONFIRMED);
+                    voteRepository.save(savedVote);
+                    log.info("Sync mode: Payment successful, vote CONFIRMED");
+                }
+            } catch (Exception e) {
+                log.error("Sync mode: Error calling wallet: {}", e.getMessage());
+                savedVote.setStatus(VoteStatus.REJECTED);
+                voteRepository.save(savedVote);
+            }
+        }
 
         return savedVote;
     }
