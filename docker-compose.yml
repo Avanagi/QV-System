@@ -38,6 +38,11 @@ services:
       RABBITMQ_DEFAULT_PASS: guest
     networks:
       - qv-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
   zipkin:
     image: openzipkin/zipkin
@@ -79,9 +84,12 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
     depends_on:
-      - postgres
-      - rabbitmq
-      - discovery
+      postgres:
+        condition: service_started
+      discovery:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - qv-network
 
@@ -95,8 +103,11 @@ services:
       SPRING_RABBITMQ_HOST: rabbitmq
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
     depends_on:
-      - postgres
-      - rabbitmq
-      - discovery
+      postgres:
+        condition: service_started
+      discovery:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - qv-network

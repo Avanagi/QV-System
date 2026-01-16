@@ -28,6 +28,12 @@ app:
   # sync = REST подход
   # async = Saga RabbitMQ подход
   architecture: async
-
-  # Адрес кошелька (через Gateway или напрямую, внутри Docker это wallet-service)
   wallet-url: http://wallet-service:8082/api/wallet/charge
+
+management:
+  tracing:
+    sampling:
+      probability: 0.0
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans

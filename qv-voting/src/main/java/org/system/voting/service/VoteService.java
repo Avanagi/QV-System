@@ -13,7 +13,6 @@ import org.system.voting.entity.VoteStatus;
 import org.system.voting.repository.VoteRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
 
@@ -32,7 +31,6 @@ public class VoteService {
     private String walletUrl;
 
     private final RestClient restClient = RestClient.create();
-
 
     @Transactional
     public Vote createVote(VoteRequest request) {
