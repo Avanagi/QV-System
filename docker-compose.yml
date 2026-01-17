@@ -22,7 +22,6 @@ services:
         if [ ! -d /root/.ethereum/geth ]; then
           geth init /root/genesis.json
         fi
-        # УБРАЛ --ipcdisable в конце
         geth --networkid 777 --http --http.addr "0.0.0.0" --http.api "eth,net,web3,personal,miner,admin" --http.corsdomain "*" --http.vhosts "*" --mine --miner.threads 1 --miner.etherbase "0x123463a4b065722e99115d6c222f267d9cabb524" --allow-insecure-unlock --nodiscover
     volumes:
       - ./blockchain-config/genesis.json:/root/genesis.json
@@ -44,11 +43,23 @@ services:
         if [ ! -d /root/.ethereum/geth ]; then
           geth init /root/genesis.json
         fi
-        # УБРАЛ --ipcdisable в конце
         geth --networkid 777 --port 30304 --mine --miner.threads 1 --miner.etherbase "0x123463a4b065722e99115d6c222f267d9cabb524" --nodiscover
     volumes:
       - ./blockchain-config/genesis.json:/root/genesis.json
       - geth_data2:/root/.ethereum
+    networks:
+      - qv-network
+
+  explorer:
+    image: alethio/ethereum-lite-explorer
+    container_name: qv-explorer
+    ports:
+      - "8099:80"
+    environment:
+      - APP_NODE_URL=http://localhost:8545
+    depends_on:
+      geth-node1:
+        condition: service_started
     networks:
       - qv-network
 

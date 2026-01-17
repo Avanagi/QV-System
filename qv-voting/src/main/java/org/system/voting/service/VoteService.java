@@ -97,4 +97,12 @@ public class VoteService {
             log.warn(">>> SAGA FAILED: Голос {} отклонен. Причина: {} <<<", voteId, reason);
         }
     }
+
+    @Transactional
+    public void deleteArchivedVote(Long voteId, String txHash) {
+        if (voteRepository.existsById(voteId)) {
+            voteRepository.deleteById(voteId);
+            log.info("🗑️ Голос {} перенесен в блокчейн (Tx: {}) и УДАЛЕН из БД.", voteId, txHash);
+        }
+    }
 }

@@ -2,8 +2,11 @@ package org.system.blockchain.service;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.system.blockchain.config.BlockchainRabbitConfig;
+import org.system.common.event.VoteArchivedEvent;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
@@ -27,6 +30,12 @@ public class BlockchainService {
     private Web3j web3j;
     private Credentials credentials;
 
+    private final RabbitTemplate rabbitTemplate;
+
+    public BlockchainService(RabbitTemplate rabbitTemplate) {
+        this.rabbitTemplate = rabbitTemplate;
+    }
+
     @PostConstruct
     public void init() {
         this.web3j = Web3j.build(new HttpService(rpcUrl));
@@ -35,13 +44,11 @@ public class BlockchainService {
         log.info("============== BLOCKCHAIN IDENTITY CHECK ==============");
         log.info("RPC URL: {}", rpcUrl);
         log.info("Java использует адрес: {}", credentials.getAddress());
-        log.info("Ожидаемый адрес (с деньгами): 0x123463a4b065722e99115d6c222f267d9cabb524");
-        log.info(privateKey);
         log.info("=======================================================");
 
         try {
             var balance = web3j.ethGetBalance(credentials.getAddress(), DefaultBlockParameterName.LATEST).send();
-            log.info("Баланс этого адреса (Java): {}", balance.getBalance());
+            log.info("💰 Баланс майнера (wei): {}", balance.getBalance());
         } catch (Exception e) {
             log.error("Не удалось проверить баланс при старте", e);
         }
@@ -51,21 +58,21 @@ public class BlockchainService {
         try {
             String auditData = String.format("VOTE-CONFIRMED: ID=%d | User=%d | Project=%d | Cost=%s",
                     voteId, userId, projectId, cost.toString());
+
             String hexData = toHex(auditData);
 
             long chainId = 777L;
             RawTransactionManager manager = new RawTransactionManager(web3j, credentials, chainId);
 
-            // Отправляем транзакцию и ПОЛУЧАЕМ ОТВЕТ
+            // Отправляем транзакцию (0 ETH, но с данными)
             var ethSendTransaction = manager.sendTransaction(
-                    BigInteger.valueOf(22_000_000_000L), // Gas Price (22 Gwei)
-                    BigInteger.valueOf(500_000L),        // Gas Limit (подняли лимит)
-                    credentials.getAddress(),            // To
-                    hexData,                             // Data
-                    BigInteger.ZERO                      // Value
+                    BigInteger.valueOf(22_000_000_000L), // Gas Price
+                    BigInteger.valueOf(500_000L),        // Gas Limit
+                    credentials.getAddress(),            // Отправляем самому себе
+                    hexData,                             // Данные
+                    BigInteger.ZERO                      // Сумма 0
             );
 
-            // ПРОВЕРЯЕМ ОШИБКИ
             if (ethSendTransaction.hasError()) {
                 log.error("❌ ОШИБКА БЛОКЧЕЙНА: {}", ethSendTransaction.getError().getMessage());
                 return;
@@ -74,6 +81,16 @@ public class BlockchainService {
             String txHash = ethSendTransaction.getTransactionHash();
             log.info("✅ ЗАПИСАНО В БЛОКЧЕЙН! TxHash: {}", txHash);
             log.info("📝 Данные: {}", auditData);
+
+            // --- ОТПРАВЛЯЕМ СОБЫТИЕ НА УДАЛЕНИЕ ИЗ БД ---
+            VoteArchivedEvent event = new VoteArchivedEvent(voteId, txHash);
+
+            rabbitTemplate.convertAndSend(
+                    BlockchainRabbitConfig.EXCHANGE_NAME,
+                    "vote.archived",
+                    event
+            );
+            log.info("📤 Отправлено событие vote.archived для ID: {}", voteId);
 
         } catch (Exception e) {
             log.error("Критическая ошибка Web3j: ", e);
