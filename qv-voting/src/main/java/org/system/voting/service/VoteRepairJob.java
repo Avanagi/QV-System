@@ -43,7 +43,8 @@ public class VoteRepairJob {
                     vote.getId(),
                     vote.getUserId(),
                     vote.getProjectId(),
-                    BigDecimal.valueOf(vote.getCost())
+                    BigDecimal.valueOf(vote.getCost()),
+                    vote.getVoteCount()
             );
 
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "vote.created", event);

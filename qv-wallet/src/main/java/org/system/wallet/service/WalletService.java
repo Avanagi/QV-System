@@ -71,7 +71,8 @@ public class WalletService {
 
         log.info("Успех! Списано {}. Остаток: {}", event.getCost(), wallet.getBalance());
 
-        FundsReservedEvent successEvent = new FundsReservedEvent(event.getVoteId(), event.getUserId(), event.getProjectId(),  event.getCost());
+        FundsReservedEvent successEvent = new FundsReservedEvent(event.getVoteId(), event.getUserId(),
+                event.getProjectId(),  event.getCost(), event.getVoteCount());
         rabbitTemplate.convertAndSend(WalletRabbitConfig.EXCHANGE_NAME, "wallet.reserved", successEvent);
     }
 
@@ -85,7 +86,8 @@ public class WalletService {
                 event.getVoteId(),
                 event.getUserId(),
                 event.getProjectId(),
-                event.getCost()
+                event.getCost(),
+                event.getVoteCount()
         );
         rabbitTemplate.convertAndSend(WalletRabbitConfig.EXCHANGE_NAME, "wallet.reserved", successEvent);
     }

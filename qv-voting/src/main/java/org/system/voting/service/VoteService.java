@@ -50,7 +50,8 @@ public class VoteService {
         log.info("Голос сохранен с ID: {}. Стоимость: {}. Ждем оплаты...", savedVote.getId(), costValue);
 
         if ("async".equalsIgnoreCase(architectureMode)) {
-            VoteCreatedEvent event = new VoteCreatedEvent(savedVote.getId(), savedVote.getUserId(), savedVote.getProjectId(), cost);
+            VoteCreatedEvent event = new VoteCreatedEvent(savedVote.getId(), savedVote.getUserId(),
+                    savedVote.getProjectId(), cost, savedVote.getVoteCount());
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "vote.created", event);
             log.info("Async mode: Sent to RabbitMQ");
 

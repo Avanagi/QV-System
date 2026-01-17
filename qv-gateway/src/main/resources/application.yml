@@ -15,6 +15,12 @@ spring:
           uri: lb://VOTING-SERVICE
           predicates:
             - Path=/api/votes/**
+        - id: history-route
+          uri: lb://HISTORY-SERVICE
+          predicates:
+            - Path=/api/history/**
+          filters:
+            - RewritePath=/api/history/(?<segment>.*), /history/$\{segment}
 
 eureka:
   client:

@@ -23,6 +23,7 @@
         <module>qv-wallet</module>
         <module>qv-voting</module>
         <module>qv-blockchain</module>
+        <module>qv-history</module>
     </modules>
 
     <properties>

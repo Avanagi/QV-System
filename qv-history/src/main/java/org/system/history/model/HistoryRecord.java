@@ -1,4 +1,4 @@
-package org.system.common.event;
+package org.system.history.model;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -9,10 +9,11 @@ import java.math.BigDecimal;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class VoteCreatedEvent implements Serializable {
+public class HistoryRecord implements Serializable {
     private Long voteId;
-    private Long userId;
     private Long projectId;
-    private BigDecimal cost;
     private Integer voteCount;
+    private BigDecimal cost;
+    private String txHash;
+    private String timestamp;
 }

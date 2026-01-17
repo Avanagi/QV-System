@@ -16,6 +16,7 @@ import org.web3j.tx.RawTransactionManager;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 
 @Service
 @Slf4j
@@ -54,7 +55,7 @@ public class BlockchainService {
         }
     }
 
-    public void writeVoteToBlockchain(Long voteId, Long userId, Long projectId, BigDecimal cost) {
+    public void writeVoteToBlockchain(Long voteId, Long userId, Long projectId, Integer voteCount, BigDecimal cost) {
         try {
             String auditData = String.format("VOTE-CONFIRMED: ID=%d | User=%d | Project=%d | Cost=%s",
                     voteId, userId, projectId, cost.toString());
@@ -74,23 +75,30 @@ public class BlockchainService {
             );
 
             if (ethSendTransaction.hasError()) {
-                log.error("❌ ОШИБКА БЛОКЧЕЙНА: {}", ethSendTransaction.getError().getMessage());
+                log.error("ОШИБКА БЛОКЧЕЙНА: {}", ethSendTransaction.getError().getMessage());
                 return;
             }
 
             String txHash = ethSendTransaction.getTransactionHash();
-            log.info("✅ ЗАПИСАНО В БЛОКЧЕЙН! TxHash: {}", txHash);
-            log.info("📝 Данные: {}", auditData);
+            log.info("ЗАПИСАНО В БЛОКЧЕЙН! TxHash: {}", txHash);
+            log.info("Данные: {}", auditData);
 
-            // --- ОТПРАВЛЯЕМ СОБЫТИЕ НА УДАЛЕНИЕ ИЗ БД ---
-            VoteArchivedEvent event = new VoteArchivedEvent(voteId, txHash);
+            VoteArchivedEvent event = new VoteArchivedEvent(
+                    voteId,
+                    userId,
+                    projectId,
+                    voteCount,
+                    cost,
+                    txHash,
+                    LocalDateTime.now()
+            );
 
             rabbitTemplate.convertAndSend(
                     BlockchainRabbitConfig.EXCHANGE_NAME,
                     "vote.archived",
                     event
             );
-            log.info("📤 Отправлено событие vote.archived для ID: {}", voteId);
+            log.info("Отправлено событие vote.archived для ID: {}", voteId);
 
         } catch (Exception e) {
             log.error("Критическая ошибка Web3j: ", e);

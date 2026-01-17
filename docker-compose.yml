@@ -97,6 +97,15 @@ services:
       timeout: 10s
       retries: 5
 
+  redis:
+    image: redis:alpine
+    container_name: qv-redis
+    ports:
+      - "6379:6379"
+    restart: always
+    networks:
+      - qv-network
+
   zipkin:
     image: openzipkin/zipkin
     container_name: qv-zipkin
@@ -168,6 +177,7 @@ services:
     container_name: qv-blockchain
     environment:
       SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_DATA_REDIS_HOST: qv-redis
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
       BLOCKCHAIN_RPC_URL: http://geth-node1:8545
       BLOCKCHAIN_PRIVATE_KEY: 4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d
@@ -177,6 +187,24 @@ services:
       discovery:
         condition: service_started
       geth-node1:
+        condition: service_started
+    networks:
+      - qv-network
+
+  history-service:
+    build: ./qv-history
+    container_name: qv-history
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_DATA_REDIS_HOST: qv-redis
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://qv-zipkin:9411/api/v2/spans
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      discovery:
+        condition: service_started
+      redis:
         condition: service_started
     networks:
       - qv-network

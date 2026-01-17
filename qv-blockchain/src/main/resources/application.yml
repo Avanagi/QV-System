@@ -5,7 +5,11 @@ spring:
   application:
     name: blockchain-service
   rabbitmq:
-    host: localhost
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: 6379
 
 eureka:
   client:
@@ -25,3 +29,4 @@ management:
   zipkin:
     tracing:
       endpoint: http://zipkin:9411/api/v2/spans
+
