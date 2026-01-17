@@ -22,6 +22,7 @@
         <module>qv-gateway</module>
         <module>qv-wallet</module>
         <module>qv-voting</module>
+        <module>qv-blockchain</module>
     </modules>
 
     <properties>

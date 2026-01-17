@@ -71,7 +71,7 @@ public class WalletService {
 
         log.info("Успех! Списано {}. Остаток: {}", event.getCost(), wallet.getBalance());
 
-        FundsReservedEvent successEvent = new FundsReservedEvent(event.getVoteId(), event.getUserId());
+        FundsReservedEvent successEvent = new FundsReservedEvent(event.getVoteId(), event.getUserId(), event.getProjectId(),  event.getCost());
         rabbitTemplate.convertAndSend(WalletRabbitConfig.EXCHANGE_NAME, "wallet.reserved", successEvent);
     }
 
@@ -81,7 +81,12 @@ public class WalletService {
     }
 
     private void sendSuccess(VoteCreatedEvent event) {
-        FundsReservedEvent successEvent = new FundsReservedEvent(event.getVoteId(), event.getUserId());
+        FundsReservedEvent successEvent = new FundsReservedEvent(
+                event.getVoteId(),
+                event.getUserId(),
+                event.getProjectId(),
+                event.getCost()
+        );
         rabbitTemplate.convertAndSend(WalletRabbitConfig.EXCHANGE_NAME, "wallet.reserved", successEvent);
     }
 }

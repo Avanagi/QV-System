@@ -26,8 +26,8 @@ eureka:
 
 app:
   chaos:
-    enabled: true
-    rate: 1.0
+    enabled: false
+    rate: 0.1
 
 management:
   tracing:

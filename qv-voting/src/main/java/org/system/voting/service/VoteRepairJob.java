@@ -42,6 +42,7 @@ public class VoteRepairJob {
             VoteCreatedEvent event = new VoteCreatedEvent(
                     vote.getId(),
                     vote.getUserId(),
+                    vote.getProjectId(),
                     BigDecimal.valueOf(vote.getCost())
             );
 
