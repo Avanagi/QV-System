@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -34,6 +35,16 @@ public class VoteService {
 
     @Transactional
     public Vote createVote(VoteRequest request) {
+        boolean alreadyVoted = voteRepository.existsByUserIdAndProjectIdAndStatusIn(
+                request.getUserId(),
+                request.getProjectId(),
+                List.of(VoteStatus.PENDING, VoteStatus.CONFIRMED)
+        );
+
+        if (alreadyVoted) {
+            throw new RuntimeException("DOUBLE_VOTE: Вы уже голосовали за этот проект!");
+        }
+
         log.info("Принят голос от User: {}", request.getUserId());
 
         double costValue = Math.pow(request.getVoteCount(), 2);

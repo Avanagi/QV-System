@@ -11,4 +11,6 @@ public interface VoteRepository extends JpaRepository<Vote, Long> {
 
     List<Vote> findAllByStatusAndCreatedAtBefore(VoteStatus status, LocalDateTime dateTime);
 
+    boolean existsByUserIdAndProjectIdAndStatusIn(Long userId, Long projectId, List<VoteStatus> statuses);
+
 }

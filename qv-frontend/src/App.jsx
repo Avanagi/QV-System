@@ -2,190 +2,291 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
     Container, Typography, Card, CardContent, Slider, Button,
-    List, ListItem, ListItemText, Divider, Chip, TextField, Box
+    List, ListItem, ListItemText, Divider, Chip, TextField, Box, IconButton, CircularProgress
 } from '@mui/material';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import AssessmentIcon from '@mui/icons-material/Assessment';
 
 const API_URL = '/api';
 
 function App() {
-    // Состояния приложения
     const [view, setView] = useState('loading');
     const [user, setUser] = useState(null);
-
     const [username, setUsername] = useState('');
-    const [first_name, setFirstName] = useState('');
 
-    // Данные
-    const [projects, setProjects] = useState([]);
+    // Состояния
     const [history, setHistory] = useState([]);
+    const [myProjects, setMyProjects] = useState([]); // Мои созданные опросы
+    const [loadingStats, setLoadingStats] = useState({}); // Кэш статистики {projectId: stats}
 
-    // Формы
+    // Создание
     const [newProjectTitle, setNewProjectTitle] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
+    const [createdCode, setCreatedCode] = useState(null);
 
     // Голосование
-    const [selectedProject, setSelectedProject] = useState(null);
+    const [searchCode, setSearchCode] = useState('');
+    const [foundProject, setFoundProject] = useState(null);
     const [voteCount, setVoteCount] = useState(1);
 
+    // Инициализация
     useEffect(() => {
         const initApp = async () => {
-            const tgUser = window.Telegram.WebApp.initDataUnsafe?.user;
-
-            if (tgUser) {
-                const displayName = tgUser.username ? `@${tgUser.username}` : tgUser.first_name;
-                setUsername(displayName);
-                setFirstName(tgUser.first_name)
-
-                try {
-                    const res = await axios.post(`${API_URL}/auth/login/${tgUser.id}`);
-                    setUser(res.data);
-                    setView('role-select');
-                } catch (e) {
-                    alert("Ошибка логина: " + e.message);
-                }
+            let tgUserId = 101;
+            if (window.Telegram?.WebApp?.initDataUnsafe?.user) {
+                const tgUser = window.Telegram.WebApp.initDataUnsafe.user;
+                tgUserId = tgUser.id;
+                setUsername(tgUser.username ? `@${tgUser.username}` : tgUser.first_name);
             } else {
-                // Fallback для браузера
                 setUsername("Test User");
-                const res = await axios.post(`${API_URL}/auth/login/101`);
+            }
+
+            try {
+                const res = await axios.post(`${API_URL}/auth/login/${tgUserId}`);
                 setUser(res.data);
                 setView('role-select');
+            } catch (e) {
+                alert("Ошибка авторизации");
             }
         };
-
         initApp();
     }, []);
 
-    const loadProjects = async () => {
-        const res = await axios.get(`${API_URL}/projects`);
-        setProjects(res.data);
-    };
+    // --- ЗАГРУЗЧИКИ ---
 
     const loadHistory = async () => {
         const res = await axios.get(`${API_URL}/history/${user.userId}`);
         setHistory(res.data);
     };
 
+    const loadMyProjects = async () => {
+        try {
+            // 1. Получаем список проектов
+            const res = await axios.get(`${API_URL}/projects/my/${user.userId}`);
+            setMyProjects(res.data);
+
+            // 2. Для каждого проекта подгружаем статистику асинхронно
+            res.data.forEach(async (p) => {
+                try {
+                    const statsRes = await axios.get(`${API_URL}/history/stats/${p.id}`);
+                    setLoadingStats(prev => ({...prev, [p.id]: statsRes.data}));
+                } catch (e) {
+                    console.error("Нет статистики для", p.id);
+                }
+            });
+        } catch (e) {
+            alert("Ошибка загрузки проектов");
+        }
+    };
+
+    // --- ДЕЙСТВИЯ ---
+
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+        alert("Код скопирован!");
+    };
+
+    const handleCreateProject = async () => {
+        try {
+            const res = await axios.post(`${API_URL}/projects`, {
+                title: newProjectTitle,
+                description: newProjectDesc,
+                creatorId: user.userId
+            });
+            setCreatedCode(res.data.accessCode);
+        } catch (e) {
+            alert('Ошибка создания');
+        }
+    };
+
+    const handleSearchProject = async () => {
+        try {
+            setFoundProject(null);
+            const res = await axios.get(`${API_URL}/projects/search/${searchCode}`);
+            setFoundProject(res.data);
+            setVoteCount(1);
+        } catch (e) {
+            alert('Опрос не найден');
+        }
+    };
+
+    const handleVote = async () => {
+        try {
+            await axios.post(`${API_URL}/votes`, {
+                userId: user.userId,
+                projectId: foundProject.id,
+                voteCount: voteCount
+            });
+            alert('Голос отправлен!');
+            setView('role-select');
+            setFoundProject(null);
+            setSearchCode('');
+        } catch (e) {
+            if (e.response && e.response.status === 500) {
+                alert('Ошибка: Вы уже голосовали или нет средств!');
+            } else {
+                alert('Ошибка сети');
+            }
+        }
+    };
+
+    // --- UI ---
 
     if (view === 'loading') return <Typography align="center" mt={5}>Загрузка...</Typography>;
 
+    // 1. ГЛАВНОЕ МЕНЮ
     if (view === 'role-select') {
         return (
-            <Container maxWidth="sm" style={{ marginTop: '50px', textAlign: 'center' }}>
+            <Container maxWidth="sm" style={{ marginTop: '30px', textAlign: 'center' }}>
+                <Typography variant="h4" gutterBottom>Привет, {username}!</Typography>
+                <Chip label={`Баланс: ${user?.balance} QV`} color="primary" variant="outlined" style={{marginBottom: 20}} />
 
-                <Typography variant="h4" gutterBottom>
-                    Привет, {first_name}! 👋
-                </Typography>
-
-                <Typography variant="caption" display="block" color="textSecondary">
-                    ID: {user?.userId}
-                </Typography>
-
-                <Typography variant="body1" gutterBottom style={{marginTop: 10}}>
-                    Твой баланс: <b>{user?.balance} QV</b>
-                </Typography>
-
-                <Box mt={4} display="flex" flexDirection="column" gap={2}>
-                    <Button variant="contained" size="large" onClick={() => { setView('creator'); }}>
-                        📝 Создать Опрос
+                <Box display="flex" flexDirection="column" gap={2}>
+                    <Button variant="contained" size="large" onClick={() => { setCreatedCode(null); setView('creator'); }}>
+                        ➕ Создать Новый
                     </Button>
-                    <Button variant="outlined" size="large" onClick={() => { setView('voter'); loadProjects(); }}>
-                        🗳️ Голосовать
+                    <Button variant="contained" color="secondary" size="large" onClick={() => setView('voter')}>
+                        🔎 Найти и Голосовать
+                    </Button>
+
+                    <Divider style={{margin: '10px 0'}}>МОЁ</Divider>
+
+                    <Button variant="outlined" startIcon={<AssessmentIcon/>} onClick={() => { setView('my-projects'); loadMyProjects(); }}>
+                        📂 Мои Опросы
+                    </Button>
+                    <Button variant="outlined" onClick={() => { setView('history'); loadHistory(); }}>
+                        📜 История Голосов
                     </Button>
                 </Box>
             </Container>
         );
     }
 
-    if (view === 'creator') {
-        const createProject = async () => {
-            await axios.post(`${API_URL}/projects`, {
-                title: newProjectTitle,
-                description: newProjectDesc,
-                creatorId: user.userId
-            });
-            alert('Проект создан!');
-            setNewProjectTitle('');
-            setNewProjectDesc('');
-            setView('role-select');
-        };
-
+    // 2. ЭКРАН "МОИ ОПРОСЫ" (НОВОЕ)
+    if (view === 'my-projects') {
         return (
             <Container maxWidth="sm" style={{ marginTop: '20px' }}>
-                <Button onClick={() => setView('role-select')}>← Назад</Button>
-                <Typography variant="h5" mt={2} mb={2}>Создание Опроса</Typography>
+                <Button onClick={() => setView('role-select')}>← Меню</Button>
+                <Typography variant="h5" mt={2} mb={2}>Созданные мной</Typography>
 
-                <Card>
-                    <CardContent>
-                        <TextField fullWidth label="Название" value={newProjectTitle} onChange={e => setNewProjectTitle(e.target.value)} margin="normal"/>
-                        <TextField fullWidth label="Описание" value={newProjectDesc} onChange={e => setNewProjectDesc(e.target.value)} margin="normal" multiline rows={3}/>
-                        <Button variant="contained" fullWidth style={{marginTop: 20}} onClick={createProject}>Создать</Button>
-                    </CardContent>
-                </Card>
+                {myProjects.length === 0 && <Typography align="center">Список пуст</Typography>}
+
+                <List>
+                    {myProjects.map((p) => {
+                        const stats = loadingStats[p.id];
+                        return (
+                            <Card key={p.id} style={{marginBottom: 15, background: '#f9f9f9'}}>
+                                <CardContent>
+                                    <Typography variant="h6">{p.title}</Typography>
+                                    <Typography variant="body2" color="textSecondary" paragraph>{p.description}</Typography>
+
+                                    <Divider style={{margin: '10px 0'}} />
+
+                                    <Box display="flex" justifyContent="space-between" alignItems="center">
+                                        <Chip
+                                            label={p.accessCode}
+                                            color="primary"
+                                            onClick={() => copyToClipboard(p.accessCode)}
+                                            icon={<ContentCopyIcon style={{fontSize: 16}}/>}
+                                            clickable
+                                        />
+
+                                        {stats ? (
+                                            <div style={{textAlign: 'right'}}>
+                                                <Typography variant="caption" display="block">Участников: <b>{stats.participants}</b></Typography>
+                                                <Typography variant="caption" display="block">Голосов: <b>{stats.totalVotes}</b></Typography>
+                                            </div>
+                                        ) : (
+                                            <CircularProgress size={20} />
+                                        )}
+                                    </Box>
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
+                </List>
             </Container>
         );
     }
 
-    if (view === 'voter') {
-        const sendVote = async () => {
-            if (!selectedProject) return;
-            try {
-                await axios.post(`${API_URL}/votes`, {
-                    userId: user.userId,
-                    projectId: selectedProject.id,
-                    voteCount: voteCount
-                });
-                alert('Голос отправлен!');
-            } catch(e) {
-                alert('Ошибка!');
-            }
-        };
+    // ... (Экраны CREATOR, VOTER, HISTORY остаются без изменений, скопируй их из прошлого ответа) ...
 
+    // 3. ЭКРАН СОЗДАНИЯ
+    if (view === 'creator') {
+        if (createdCode) {
+            return (
+                <Container maxWidth="sm" style={{ marginTop: '30px', textAlign: 'center' }}>
+                    <Typography variant="h5" gutterBottom color="success.main">Опрос создан!</Typography>
+                    <Typography variant="body1">Код доступа:</Typography>
+                    <Card style={{margin: '20px 0', background: '#e8f5e9'}}>
+                        <CardContent>
+                            <Typography variant="h3" style={{fontWeight: 'bold', letterSpacing: 3}}>{createdCode}</Typography>
+                        </CardContent>
+                    </Card>
+                    <Button variant="contained" fullWidth onClick={() => setView('role-select')}>В Меню</Button>
+                </Container>
+            );
+        }
         return (
             <Container maxWidth="sm" style={{ marginTop: '20px' }}>
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <Button onClick={() => setView('role-select')}>← Меню</Button>
-                    <Button onClick={() => { setView('history'); loadHistory(); }}>История 🕒</Button>
-                </div>
+                <Button onClick={() => setView('role-select')}>← Назад</Button>
+                <Typography variant="h5" mt={2}>Новый Опрос</Typography>
+                <TextField fullWidth label="Тема" value={newProjectTitle} onChange={e => setNewProjectTitle(e.target.value)} margin="normal"/>
+                <TextField fullWidth label="Описание" value={newProjectDesc} onChange={e => setNewProjectDesc(e.target.value)} margin="normal" multiline rows={3}/>
+                <Button variant="contained" fullWidth style={{marginTop: 20}} onClick={handleCreateProject} disabled={!newProjectTitle}>Создать</Button>
+            </Container>
+        );
+    }
 
-                <Typography variant="h6" align="center" mt={2}>Проекты</Typography>
-
-                <List>
-                    {projects.map(p => (
-                        <Card key={p.id} style={{marginBottom: 10, border: selectedProject?.id === p.id ? '2px solid #1976d2' : 'none'}} onClick={() => setSelectedProject(p)}>
-                            <CardContent>
-                                <Typography variant="h6">{p.title}</Typography>
-                                <Typography variant="body2" color="textSecondary">{p.description}</Typography>
-                            </CardContent>
-                        </Card>
-                    ))}
-                </List>
-
-                {selectedProject && (
-                    <div style={{position: 'fixed', bottom: 0, left: 0, right: 0, background: 'white', padding: 20, boxShadow: '0 -2px 10px rgba(0,0,0,0.1)'}}>
-                        <Typography>Голосов за "{selectedProject.title}": {voteCount}</Typography>
-                        <Slider value={voteCount} min={1} max={10} onChange={(e, v) => setVoteCount(v)} valueLabelDisplay="auto" />
-                        <Typography align="right" color="error">Цена: {voteCount * voteCount} QV</Typography>
-                        <Button variant="contained" fullWidth onClick={sendVote}>Подтвердить</Button>
-                    </div>
+    // 4. ЭКРАН ГОЛОСОВАНИЯ
+    if (view === 'voter') {
+        return (
+            <Container maxWidth="sm" style={{ marginTop: '20px' }}>
+                <Button onClick={() => setView('role-select')}>← Назад</Button>
+                {!foundProject ? (
+                    <Box mt={2}>
+                        <Typography variant="h6" align="center" gutterBottom>Поиск опроса</Typography>
+                        <Box display="flex" gap={1}>
+                            <TextField fullWidth label="Код опроса" value={searchCode} onChange={e => setSearchCode(e.target.value.toUpperCase())}/>
+                            <Button variant="contained" onClick={handleSearchProject}>Найти</Button>
+                        </Box>
+                    </Box>
+                ) : (
+                    <Card style={{marginTop: 20}}>
+                        <CardContent>
+                            <Typography variant="h5">{foundProject.title}</Typography>
+                            <Typography color="textSecondary" paragraph>{foundProject.description}</Typography>
+                            <Divider sx={{my: 2}}/>
+                            <Typography>Ваш голос: {voteCount}</Typography>
+                            <Slider value={voteCount} min={1} max={10} onChange={(e, v) => setVoteCount(v)} valueLabelDisplay="auto" marks />
+                            <Typography align="right" color="error" variant="h6">Цена: {voteCount * voteCount} QV</Typography>
+                            <Button variant="contained" fullWidth sx={{mt: 2}} onClick={handleVote}>Голосовать</Button>
+                            <Button size="small" sx={{mt: 1}} onClick={() => setFoundProject(null)}>Отмена</Button>
+                        </CardContent>
+                    </Card>
                 )}
             </Container>
         );
     }
 
-    // Экран Истории
+    // 5. ЭКРАН ИСТОРИИ (Транзакции)
     if (view === 'history') {
         return (
             <Container maxWidth="sm" style={{ marginTop: '20px' }}>
-                <Button onClick={() => setView('voter')}>← К проектам</Button>
-                <Typography variant="h5" mt={2}>Моя История</Typography>
+                <Button onClick={() => setView('role-select')}>← Меню</Button>
+                <Typography variant="h5" mt={2} mb={2}>Мои голоса</Typography>
                 <List>
                     {history.map((h, i) => (
-                        <ListItem key={i} divider>
-                            <ListItemText
-                                primary={`Проект ID: ${h.projectId}`}
-                                secondary={`Потрачено: ${h.cost} QV • Tx: ${h.txHash.substring(0, 10)}...`}
-                            />
-                        </ListItem>
+                        <div key={i}>
+                            <ListItem>
+                                <ListItemText
+                                    primary={`Опрос ID: ${h.projectId}`}
+                                    secondary={`Отдано голосов: ${h.voteCount} (Cost: ${h.cost})`}
+                                />
+                                <Chip label="OK" color="success" size="small" />
+                            </ListItem>
+                            <Divider/>
+                        </div>
                     ))}
                 </List>
             </Container>
