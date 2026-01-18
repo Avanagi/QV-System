@@ -13,22 +13,42 @@ spring:
             allowedMethods:
               - GET
               - POST
+              - PUT
+              - DELETE
+              - OPTIONS
             allowedHeaders: "*"
       discovery:
         locator:
           enabled: true
           lower-case-service-id: true
       routes:
+        # 1. Голосование (Voting Service)
         - id: voting-route
           uri: lb://VOTING-SERVICE
           predicates:
             - Path=/api/votes/**
+
+        # 2. Проекты (Voting Service)
+        - id: projects-route
+          uri: lb://VOTING-SERVICE
+          predicates:
+            - Path=/api/projects/**
+
+        # 3. История (History Service)
         - id: history-route
           uri: lb://HISTORY-SERVICE
           predicates:
             - Path=/api/history/**
           filters:
             - RewritePath=/api/history/(?<segment>.*), /history/$\{segment}
+
+        # 4. Авторизация (Wallet Service)
+        - id: auth-route
+          uri: lb://WALLET-SERVICE
+          predicates:
+            - Path=/api/auth/**
+          filters:
+            - RewritePath=/api/auth/(?<segment>.*), /api/wallet/$\{segment}
 
 eureka:
   client:
@@ -41,4 +61,4 @@ management:
       probability: 1.0
   zipkin:
     tracing:
-      endpoint: http://zipkin:9411/api/v2/spans
+      endpoint: http://localhost:9411/api/v2/spans

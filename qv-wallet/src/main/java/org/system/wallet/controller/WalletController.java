@@ -52,4 +52,17 @@ public class WalletController {
         log.info("HTTP Charge Success: -{} from User {}", amount, userId);
         return ResponseEntity.ok("Charged");
     }
+
+    @PostMapping("/login/{telegramId}")
+    @Transactional
+    public ResponseEntity<Wallet> loginOrRegister(@PathVariable Long telegramId) {
+        return ResponseEntity.ok(
+                walletRepository.findById(telegramId)
+                        .orElseGet(() -> {
+                            log.info("Регистрация нового пользователя: {}", telegramId);
+                            Wallet newWallet = new Wallet(telegramId, new BigDecimal("1000.00"));
+                            return walletRepository.save(newWallet);
+                        })
+        );
+    }
 }
