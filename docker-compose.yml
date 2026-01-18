@@ -208,3 +208,11 @@ services:
         condition: service_started
     networks:
       - qv-network
+
+  frontend:
+    build: ./qv-frontend
+    container_name: qv-frontend
+    ports:
+      - "3000:80"
+    networks:
+      - qv-network
