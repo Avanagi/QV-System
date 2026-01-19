@@ -10,7 +10,12 @@ import java.util.List;
 
 public interface VoteRepository extends JpaRepository<Vote, Long> {
 
-    @Query("SELECT COUNT(v) > 0 FROM Vote v WHERE v.userId = :userId AND v.option.poll.id = :pollId")
+    @Query(value = """
+        SELECT count(*) > 0
+        FROM votes v
+        JOIN options o ON v.option_id = o.id
+        WHERE v.user_id = :userId AND o.poll_id = :pollId
+    """, nativeQuery = true)
     boolean existsByUserIdAndOptionPollId(Long userId, Long pollId);
 
     List<Vote> findAllByStatusAndCreatedAtBefore(VoteStatus status, LocalDateTime timestamp);

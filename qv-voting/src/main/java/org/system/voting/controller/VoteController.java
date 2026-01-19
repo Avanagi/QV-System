@@ -19,8 +19,13 @@ public class VoteController {
             voteService.submitBatchVote(request);
             return ResponseEntity.ok("Голоса приняты");
         } catch (RuntimeException e) {
-            // Возвращаем 500 с текстом ошибки (фронтенд это покажет)
             return ResponseEntity.internalServerError().body(e.getMessage());
         }
+    }
+
+    @GetMapping("/check")
+    public ResponseEntity<Boolean> hasVoted(@RequestParam Long userId, @RequestParam Long pollId) {
+        boolean voted = voteService.hasVoted(userId, pollId);
+        return ResponseEntity.ok(voted);
     }
 }

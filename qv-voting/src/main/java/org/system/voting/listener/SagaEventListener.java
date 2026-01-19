@@ -15,7 +15,6 @@ public class SagaEventListener {
 
     private final VoteService voteService;
 
-    // Слушаем только успешную запись в блокчейн для очистки базы
     @RabbitListener(queues = RabbitConfig.ARCHIVE_QUEUE)
     public void handleVoteArchived(VoteArchivedEvent event) {
         voteService.deleteArchivedVote(event.getVoteId(), event.getTxHash());

@@ -26,7 +26,7 @@ public class Poll {
     private Long creatorId;
 
     @OneToMany(mappedBy = "poll", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @JsonManagedReference // Чтобы не было зацикливания JSON
+    @JsonManagedReference
     private List<Option> options = new ArrayList<>();
 
     public Poll(String title, String description, Long creatorId) {

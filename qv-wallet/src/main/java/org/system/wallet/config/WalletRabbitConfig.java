@@ -8,13 +8,9 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class WalletRabbitConfig {
 
-    public static final String QUEUE_NAME = "wallet-queue";
     public static final String EXCHANGE_NAME = "saga-exchange";
 
-    @Bean
-    public Queue walletQueue() {
-        return new Queue(QUEUE_NAME);
-    }
+    public static final String REWARD_QUEUE = "wallet-reward-queue";
 
     @Bean
     public TopicExchange exchange() {
@@ -22,8 +18,13 @@ public class WalletRabbitConfig {
     }
 
     @Bean
-    public Binding binding(Queue queue, TopicExchange exchange) {
-        return BindingBuilder.bind(queue).to(exchange).with("vote.created");
+    public Queue rewardQueue() {
+        return new Queue(REWARD_QUEUE);
+    }
+
+    @Bean
+    public Binding bindingReward(Queue rewardQueue, TopicExchange exchange) {
+        return BindingBuilder.bind(rewardQueue).to(exchange).with("vote.archived");
     }
 
     @Bean

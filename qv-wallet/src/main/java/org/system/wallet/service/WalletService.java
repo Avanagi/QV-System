@@ -15,6 +15,7 @@ import org.system.wallet.entity.Wallet;
 import org.system.wallet.repository.ProcessedVoteRepository;
 import org.system.wallet.repository.WalletRepository;
 
+import java.math.BigDecimal;
 import java.util.Random;
 
 @Service
@@ -32,6 +33,8 @@ public class WalletService {
 
     @Value("${app.chaos.rate:0.0}")
     private double chaosRate;
+
+    private static final BigDecimal VOTE_REWARD = new BigDecimal("10.00");
 
     @Transactional
     public void processPayment(VoteCreatedEvent event) {
@@ -88,5 +91,15 @@ public class WalletService {
                 event.getPollId()
         );
         rabbitTemplate.convertAndSend(WalletRabbitConfig.EXCHANGE_NAME, "wallet.reserved", successEvent);
+    }
+
+    @Transactional
+    public void processReward(Long userId, Long voteId) {
+        Wallet wallet = walletRepository.findById(userId).orElse(null);
+        if (wallet != null) {
+            wallet.setBalance(wallet.getBalance().add(VOTE_REWARD));
+            walletRepository.save(wallet);
+            log.info("💰 НАГРАДА: Пользователь {} получил {} QV за голос {}", userId, VOTE_REWARD, voteId);
+        }
     }
 }

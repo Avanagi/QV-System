@@ -40,7 +40,7 @@ function App() {
     const getGroupedHistory = () => {
         const groups = {};
         history.forEach(item => {
-            const key = item.pollId;
+            const key = item.pollId || 'unknown';
             if (!groups[key]) {
                 groups[key] = {
                     title: item.pollTitle || `Опрос #${item.pollId}`,
@@ -49,9 +49,16 @@ function App() {
                 };
             }
             groups[key].items.push(item);
-            groups[key].totalCost += item.cost;
+            groups[key].totalCost += Number(item.cost || 0);
         });
         return Object.values(groups).reverse();
+    };
+
+    const refreshUser = async (userId) => {
+        try {
+            const res = await axios.post(`${API_URL}/auth/login/${userId}`);
+            setUser(res.data);
+        } catch (e) { console.error(e); }
     };
 
     useEffect(() => {
@@ -109,6 +116,20 @@ function App() {
         setHistory(res.data);
     };
 
+    const handleEnterVote = async (poll) => {
+        try {
+            const res = await axios.get(`${API_URL}/votes/check?userId=${user.userId}&pollId=${poll.id}`);
+            if (res.data === true) {
+                alert("Вы уже распределили голоса в этом опросе! Повторное участие невозможно.");
+            } else {
+                setActivePoll(poll);
+                setVotes({});
+                setView('voting');
+            }
+        } catch (e) {
+            alert("Ошибка проверки статуса");
+        }
+    };
 
     const handleCreateSubmit = async () => {
         try {
@@ -122,6 +143,7 @@ function App() {
                 options: filtered
             });
             setCreatedCode(res.data.accessCode);
+            refreshUser(user.userId);
         } catch (e) { alert("Ошибка создания"); }
     };
 
@@ -152,9 +174,10 @@ function App() {
                 pollId: activePoll.id,
                 votes: votes
             });
-            alert("Голоса записаны в Блокчейн!");
+            alert("Голоса приняты в обработку!");
             setView('menu');
             setVotes({});
+            setTimeout(() => refreshUser(user.userId), 2000);
         } catch (e) {
             alert(e.response?.data || "Ошибка");
         }
@@ -195,12 +218,25 @@ function App() {
                 <Box textAlign="center" mb={4}>
                     <Typography variant="h4" fontWeight="bold" gutterBottom>QV Voting</Typography>
                     <Typography variant="subtitle1" color="text.secondary">Привет, {username}!</Typography>
-                    <Chip label={`ID: ${user?.userId}`} variant="outlined" size="small" sx={{mt: 1}}/>
+
+                    <Paper
+                        elevation={3}
+                        sx={{
+                            mt: 2, p: 2,
+                            background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+                            color: 'white',
+                            borderRadius: 3
+                        }}
+                    >
+                        <Typography variant="caption" sx={{opacity: 0.8}}>БАЛАНС КОШЕЛЬКА</Typography>
+                        <Typography variant="h3" fontWeight="bold">{user?.balance}</Typography>
+                        <Typography variant="subtitle2">Global Credits (QV)</Typography>
+                    </Paper>
                 </Box>
 
                 <Stack spacing={2}>
-                    <Paper elevation={3} sx={{ p: 3, borderRadius: 4 }}>
-                        <Typography variant="h6" gutterBottom>🔓 Ввести код</Typography>
+                    <Paper elevation={1} sx={{ p: 2, borderRadius: 3, border: '1px solid #eee' }}>
+                        <Typography variant="subtitle2" gutterBottom color="text.secondary">🔓 Ввести код доступа</Typography>
                         <Box display="flex" gap={1}>
                             <TextField
                                 fullWidth size="small"
@@ -220,6 +256,7 @@ function App() {
                         sx={{ py: 2, borderRadius: 3 }}
                     >
                         Создать Опрос
+                        <Chip label="-50 QV" size="small" sx={{ml: 1, bgcolor: 'rgba(255,255,255,0.2)', color: 'white'}} />
                     </Button>
 
                     <Grid container spacing={2}>
@@ -249,6 +286,7 @@ function App() {
                         startIcon={<HistoryIcon />}
                         onClick={() => { setView('history'); loadHistory(); }}
                         color="secondary"
+                        sx={{mt: 2}}
                     >
                         История транзакций
                     </Button>
@@ -318,7 +356,8 @@ function App() {
                                 <Typography variant="body2" color="text.secondary" paragraph>
                                     {poll.description || "Без описания"}
                                 </Typography>
-                                <Button variant="contained" fullWidth onClick={() => { setActivePoll(poll); setVotes({}); setView('voting'); }}>
+                                {/* ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ ПРОВЕРКИ */}
+                                <Button variant="contained" fullWidth onClick={() => handleEnterVote(poll)}>
                                     Открыть голосование
                                 </Button>
                             </CardContent>
@@ -383,7 +422,7 @@ function App() {
                         disabled={used === 0 || remaining < 0}
                         onClick={submitVotes}
                     >
-                        Отправить голос
+                        Отправить голоса
                     </Button>
                 </Box>
             </Container>
@@ -403,7 +442,7 @@ function App() {
                             <Card key={p.id}>
                                 <CardContent>
                                     <Box display="flex" justifyContent="space-between" alignItems="start">
-                                        <Typography variant="h6">{p.title}</Typography>
+                                        <Typography variant="h6" sx={{fontWeight: 'bold'}}>{p.title}</Typography>
                                         <Chip
                                             label={p.accessCode}
                                             color="primary"
@@ -419,17 +458,57 @@ function App() {
                                     {stat ? (
                                         <Grid container spacing={2} textAlign="center">
                                             <Grid item xs={6}>
-                                                <Box bgcolor="#e3f2fd" p={1} borderRadius={2}>
+                                                <Box bgcolor="#e3f2fd" p={1.5} borderRadius={3}>
                                                     <GroupIcon color="primary" />
-                                                    <Typography variant="caption" display="block">Участников</Typography>
-                                                    <Typography variant="h6">{stat.participants}</Typography>
+                                                    <Typography variant="caption" display="block" color="textSecondary">Участников</Typography>
+                                                    <Typography variant="h6" fontWeight="bold">{stat.participants}</Typography>
                                                 </Box>
                                             </Grid>
                                             <Grid item xs={6}>
-                                                <Box bgcolor="#e0f2f1" p={1} borderRadius={2}>
+                                                <Box bgcolor="#e0f2f1" p={1.5} borderRadius={3}>
                                                     <EqualizerIcon color="success" />
-                                                    <Typography variant="caption" display="block">Сумма голосов</Typography>
-                                                    <Typography variant="h6">{stat.totalVotes}</Typography>
+                                                    <Typography variant="caption" display="block" color="textSecondary">Всего QV</Typography>
+                                                    <Typography variant="h6" fontWeight="bold">{stat.totalVotes}</Typography>
+                                                </Box>
+                                            </Grid>
+
+                                            <Grid item xs={12}>
+                                                <Box textAlign="left" mt={2}>
+                                                    <Typography variant="subtitle2" gutterBottom color="textSecondary">Распределение голосов:</Typography>
+
+                                                    {p.options && p.options.map(opt => {
+                                                        const votes = stat.optionStats?.[opt.id] || 0;
+                                                        const percent = stat.totalVotes > 0
+                                                            ? Math.round((votes / stat.totalVotes) * 100)
+                                                            : 0;
+
+                                                        return (
+                                                            <Box key={opt.id} mb={2}>
+                                                                <Box display="flex" justifyContent="space-between" fontSize="0.95rem" mb={0.5}>
+                                                                    <span style={{fontWeight: 500}}>{opt.text}</span>
+                                                                    <Typography variant="body2" component="span" fontWeight="bold" color="primary">
+                                                                        {votes} <span style={{color: '#999', fontWeight: 'normal'}}>({percent}%)</span>
+                                                                    </Typography>
+                                                                </Box>
+
+                                                                <div style={{
+                                                                    width: '100%',
+                                                                    height: '8px',
+                                                                    backgroundColor: '#f0f0f0',
+                                                                    borderRadius: '4px',
+                                                                    overflow: 'hidden'
+                                                                }}>
+                                                                    <div style={{
+                                                                        width: `${percent}%`,
+                                                                        height: '100%',
+                                                                        backgroundColor: '#2481cc',
+                                                                        transition: 'width 0.6s ease-in-out',
+                                                                        borderRadius: '4px'
+                                                                    }}></div>
+                                                                </div>
+                                                            </Box>
+                                                        );
+                                                    })}
                                                 </Box>
                                             </Grid>
                                         </Grid>
@@ -462,7 +541,7 @@ function App() {
                             <Typography variant="subtitle1" fontWeight="bold">
                                 {group.title}
                             </Typography>
-                            <Chip label={`${group.totalCost} QV`} color="primary" size="small" />
+                            <Chip label={`${Number(group.totalCost).toFixed(0)} QV`} color="primary" size="small" />
                         </Box>
 
                         <List dense>
@@ -482,7 +561,7 @@ function App() {
                                                     </Typography>
                                                     <br/>
                                                     <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#999' }}>
-                                                        Tx: {h.txHash.substring(0, 10)}...
+                                                        Tx: {h.txHash ? h.txHash.substring(0, 10) + '...' : 'Processing'}
                                                     </Typography>
                                                 </Box>
                                             }
