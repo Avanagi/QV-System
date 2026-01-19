@@ -9,8 +9,6 @@ import org.springframework.context.annotation.Configuration;
 public class RabbitConfig {
 
     public static final String EXCHANGE_NAME = "saga-exchange";
-    public static final String SUCCESS_QUEUE = "voting-success-queue";
-    public static final String FAIL_QUEUE = "voting-fail-queue";
     public static final String ARCHIVE_QUEUE = "voting-archive-queue";
 
     @Bean
@@ -19,31 +17,13 @@ public class RabbitConfig {
     }
 
     @Bean
-    public Queue successQueue() {
-        return new Queue(SUCCESS_QUEUE);
+    public Queue archiveQueue() {
+        return new Queue(ARCHIVE_QUEUE);
     }
-
-    @Bean
-    public Queue failQueue() {
-        return new Queue(FAIL_QUEUE);
-    }
-
-    @Bean
-    public Queue archiveQueue() { return new Queue(ARCHIVE_QUEUE); }
 
     @Bean
     public Binding bindingArchive(Queue archiveQueue, TopicExchange exchange) {
         return BindingBuilder.bind(archiveQueue).to(exchange).with("vote.archived");
-    }
-
-    @Bean
-    public Binding bindingSuccess(Queue successQueue, TopicExchange exchange) {
-        return BindingBuilder.bind(successQueue).to(exchange).with("wallet.reserved");
-    }
-
-    @Bean
-    public Binding bindingFail(Queue failQueue, TopicExchange exchange) {
-        return BindingBuilder.bind(failQueue).to(exchange).with("wallet.failed");
     }
 
     @Bean

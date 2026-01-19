@@ -12,7 +12,10 @@ import java.math.BigDecimal;
 public class VoteCreatedEvent implements Serializable {
     private Long voteId;
     private Long userId;
-    private Long projectId;
+    private Long optionId;
     private BigDecimal cost;
     private Integer voteCount;
+    private String pollTitle;
+    private String optionText;
+    private Long pollId;
 }

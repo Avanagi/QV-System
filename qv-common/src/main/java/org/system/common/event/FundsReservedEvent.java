@@ -15,4 +15,7 @@ public class FundsReservedEvent implements Serializable {
     private Long projectId;
     private BigDecimal cost;
     private Integer voteCount;
+    private String pollTitle;
+    private String optionText;
+    private Long pollId;
 }

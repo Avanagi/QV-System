@@ -6,7 +6,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
-import org.system.common.event.VoteCreatedEvent;
+import org.system.common.event.FundsReservedEvent;
 import org.system.voting.config.RabbitConfig;
 import org.system.voting.entity.Vote;
 import org.system.voting.entity.VoteStatus;
@@ -28,26 +28,30 @@ public class VoteRepairJob {
     @Transactional
     public void reprocessStuckVotes() {
         LocalDateTime oneMinuteAgo = LocalDateTime.now().minusMinutes(1);
-        List<Vote> stuckVotes = voteRepository.findAllByStatusAndCreatedAtBefore(VoteStatus.PENDING, oneMinuteAgo);
+
+        List<Vote> stuckVotes = voteRepository.findAllByStatusAndCreatedAtBefore(VoteStatus.CONFIRMED, oneMinuteAgo);
 
         if (stuckVotes.isEmpty()) {
             return;
         }
 
-        log.info("🧹 НАЙДЕНО ЗАВИСШИХ ГОЛОСОВ: {}", stuckVotes.size());
+        log.info("🧹 НАЙДЕНО ЗАВИСШИХ ГОЛОСОВ (не дошли до блокчейна): {}", stuckVotes.size());
 
         for (Vote vote : stuckVotes) {
             log.info("Retrying vote ID: {}", vote.getId());
 
-            VoteCreatedEvent event = new VoteCreatedEvent(
+            FundsReservedEvent event = new FundsReservedEvent(
                     vote.getId(),
                     vote.getUserId(),
-                    vote.getProjectId(),
+                    vote.getOption().getId(),
                     BigDecimal.valueOf(vote.getCost()),
-                    vote.getVoteCount()
+                    vote.getVoteCount(),
+                    vote.getOption().getPoll().getTitle(),
+                    vote.getOption().getText(),
+                    vote.getOption().getPoll().getId()
             );
 
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "vote.created", event);
+            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "wallet.reserved", event);
         }
     }
 }

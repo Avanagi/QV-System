@@ -23,7 +23,6 @@ import java.util.Random;
 public class WalletService {
 
     private final ProcessedVoteRepository processedVoteRepository;
-
     private final WalletRepository walletRepository;
     private final RabbitTemplate rabbitTemplate;
     private final Random random = new Random();
@@ -45,7 +44,7 @@ public class WalletService {
         log.info("Обработка платежа: User={}, Cost={}", event.getUserId(), event.getCost());
 
         if (chaosEnabled && random.nextDouble() < chaosRate) {
-            log.error("💥 CHAOS MONKEY: Имитация сбоя базы данных для голоса {}!", event.getVoteId());
+            log.error("СHAOS MONKEY: Имитация сбоя базы данных для голоса {}!", event.getVoteId());
             sendFailure(event, "CHAOS_DB_ERROR");
             return;
         }
@@ -67,13 +66,9 @@ public class WalletService {
 
         processedVoteRepository.save(new ProcessedVote(event.getVoteId()));
 
-        sendSuccess(event);
-
         log.info("Успех! Списано {}. Остаток: {}", event.getCost(), wallet.getBalance());
 
-        FundsReservedEvent successEvent = new FundsReservedEvent(event.getVoteId(), event.getUserId(),
-                event.getProjectId(),  event.getCost(), event.getVoteCount());
-        rabbitTemplate.convertAndSend(WalletRabbitConfig.EXCHANGE_NAME, "wallet.reserved", successEvent);
+        sendSuccess(event);
     }
 
     private void sendFailure(VoteCreatedEvent event, String reason) {
@@ -85,9 +80,12 @@ public class WalletService {
         FundsReservedEvent successEvent = new FundsReservedEvent(
                 event.getVoteId(),
                 event.getUserId(),
-                event.getProjectId(),
+                event.getOptionId(),
                 event.getCost(),
-                event.getVoteCount()
+                event.getVoteCount(),
+                event.getPollTitle(),
+                event.getOptionText(),
+                event.getPollId()
         );
         rabbitTemplate.convertAndSend(WalletRabbitConfig.EXCHANGE_NAME, "wallet.reserved", successEvent);
     }

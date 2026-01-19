@@ -55,17 +55,17 @@ public class BlockchainService {
         }
     }
 
-    public void writeVoteToBlockchain(Long voteId, Long userId, Long projectId, Integer voteCount, BigDecimal cost) {
+    public void writeVoteToBlockchain(Long voteId, Long userId, Long optionId, Integer voteCount, BigDecimal cost,
+                                     String pollTitle, String optionText, Long pollId) {
         try {
             String auditData = String.format("VOTE-CONFIRMED: ID=%d | User=%d | Project=%d | Cost=%s",
-                    voteId, userId, projectId, cost.toString());
+                    voteId, userId, pollId, cost.toString());
 
             String hexData = toHex(auditData);
 
             long chainId = 777L;
             RawTransactionManager manager = new RawTransactionManager(web3j, credentials, chainId);
 
-            // Отправляем транзакцию (0 ETH, но с данными)
             var ethSendTransaction = manager.sendTransaction(
                     BigInteger.valueOf(22_000_000_000L), // Gas Price
                     BigInteger.valueOf(500_000L),        // Gas Limit
@@ -86,12 +86,14 @@ public class BlockchainService {
             VoteArchivedEvent event = new VoteArchivedEvent(
                     voteId,
                     userId,
-                    projectId,
+                    optionId,
                     voteCount,
                     cost,
                     txHash,
-                    LocalDateTime.now()
-            );
+                    pollTitle,
+                    optionText,
+                    pollId,
+                    LocalDateTime.now());
 
             rabbitTemplate.convertAndSend(
                     BlockchainRabbitConfig.EXCHANGE_NAME,

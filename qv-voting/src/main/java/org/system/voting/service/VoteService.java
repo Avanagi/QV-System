@@ -5,17 +5,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.system.common.event.VoteCreatedEvent;
+import org.system.common.event.FundsReservedEvent;
 import org.system.voting.config.RabbitConfig;
-import org.system.voting.dto.VoteRequest;
+import org.system.voting.dto.VoteBatchRequest;
+import org.system.voting.entity.Option;
 import org.system.voting.entity.Vote;
 import org.system.voting.entity.VoteStatus;
+import org.system.voting.repository.OptionRepository;
 import org.system.voting.repository.VoteRepository;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -23,98 +23,78 @@ import java.util.List;
 public class VoteService {
 
     private final VoteRepository voteRepository;
+    private final OptionRepository optionRepository;
     private final RabbitTemplate rabbitTemplate;
 
-    @Value("${app.architecture:async}")
-    private String architectureMode;
-
-    @Value("${app.wallet-url}")
-    private String walletUrl;
-
-    private final RestClient restClient = RestClient.create();
+    private static final double MAX_BUDGET = 100.0;
 
     @Transactional
-    public Vote createVote(VoteRequest request) {
-        boolean alreadyVoted = voteRepository.existsByUserIdAndProjectIdAndStatusIn(
-                request.getUserId(),
-                request.getProjectId(),
-                List.of(VoteStatus.PENDING, VoteStatus.CONFIRMED)
+    public void submitBatchVote(VoteBatchRequest request) {
+        log.info("Batch Vote: User={}, Poll={}", request.getUserId(), request.getPollId());
+
+        if (voteRepository.existsByUserIdAndOptionPollId(request.getUserId(), request.getPollId())) {
+            throw new RuntimeException("DOUBLE_VOTE: Вы уже голосовали в этом опросе!");
+        }
+
+        double totalCost = 0;
+        for (Integer count : request.getVotes().values()) {
+            if (count < 0) throw new RuntimeException("Отрицательные голоса запрещены");
+            totalCost += Math.pow(count, 2);
+        }
+
+        if (totalCost > MAX_BUDGET) {
+            throw new RuntimeException("BUDGET_EXCEEDED: Превышен лимит 100 кредитов! (Попытка: " + totalCost + ")");
+        }
+
+        for (Map.Entry<Long, Integer> entry : request.getVotes().entrySet()) {
+            Long optionId = entry.getKey();
+            Integer count = entry.getValue();
+
+            if (count == 0) continue;
+
+            Option option = optionRepository.findById(optionId)
+                    .orElseThrow(() -> new RuntimeException("Option not found: " + optionId));
+
+            if (!option.getPoll().getId().equals(request.getPollId())) {
+                throw new RuntimeException("HACK_ATTEMPT: Опция не принадлежит этому опросу");
+            }
+
+            double cost = Math.pow(count, 2);
+
+            Vote vote = new Vote();
+            vote.setUserId(request.getUserId());
+            vote.setOption(option);
+            vote.setVoteCount(count);
+            vote.setCost(cost);
+            vote.setStatus(VoteStatus.CONFIRMED);
+
+            Vote savedVote = voteRepository.save(vote);
+            log.info("Saved Vote ID: {}, Option: {}, Cost: {}", savedVote.getId(), option.getText(), cost);
+
+            sendToBlockchain(savedVote, option);
+        }
+    }
+
+    private void sendToBlockchain(Vote vote, Option option) {
+        FundsReservedEvent event = new FundsReservedEvent(
+                vote.getId(),
+                vote.getUserId(),
+                option.getId(),
+                BigDecimal.valueOf(vote.getCost()),
+                vote.getVoteCount(),
+                option.getPoll().getTitle(),
+                option.getText(),
+                option.getPoll().getId()
         );
 
-        if (alreadyVoted) {
-            throw new RuntimeException("DOUBLE_VOTE: Вы уже голосовали за этот проект!");
-        }
-
-        log.info("Принят голос от User: {}", request.getUserId());
-
-        double costValue = Math.pow(request.getVoteCount(), 2);
-        BigDecimal cost = BigDecimal.valueOf(costValue);
-
-        Vote vote = new Vote();
-        vote.setUserId(request.getUserId());
-        vote.setProjectId(request.getProjectId());
-        vote.setVoteCount(request.getVoteCount());
-        vote.setCost(costValue);
-        vote.setStatus(VoteStatus.PENDING);
-        Vote savedVote = voteRepository.save(vote);
-
-        log.info("Голос сохранен с ID: {}. Стоимость: {}. Ждем оплаты...", savedVote.getId(), costValue);
-
-        if ("async".equalsIgnoreCase(architectureMode)) {
-            VoteCreatedEvent event = new VoteCreatedEvent(savedVote.getId(), savedVote.getUserId(),
-                    savedVote.getProjectId(), cost, savedVote.getVoteCount());
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "vote.created", event);
-            log.info("Async mode: Sent to RabbitMQ");
-
-        } else {
-            log.info("Sync mode: Calling Wallet via HTTP...");
-            try {
-
-                var response = restClient.post()
-                        .uri(walletUrl + "?userId=" + request.getUserId() + "&amount=" + cost)
-                        .retrieve()
-                        .toBodilessEntity();
-
-                if (response.getStatusCode().is2xxSuccessful()) {
-                    savedVote.setStatus(VoteStatus.CONFIRMED);
-                    voteRepository.save(savedVote);
-                    log.info("Sync mode: Payment successful, vote CONFIRMED");
-                }
-            } catch (Exception e) {
-                log.error("Sync mode: Error calling wallet: {}", e.getMessage());
-                savedVote.setStatus(VoteStatus.REJECTED);
-                voteRepository.save(savedVote);
-            }
-        }
-
-        return savedVote;
-    }
-
-    @Transactional
-    public void confirmVote(Long voteId) {
-        Vote vote = voteRepository.findById(voteId).orElse(null);
-        if (vote != null && vote.getStatus() == VoteStatus.PENDING) {
-            vote.setStatus(VoteStatus.CONFIRMED);
-            voteRepository.save(vote);
-            log.info(">>> SAGA FINISHED: Голос {} подтвержден и оплачен! <<<", voteId);
-        }
-    }
-
-    @Transactional
-    public void cancelVote(Long voteId, String reason) {
-        Vote vote = voteRepository.findById(voteId).orElse(null);
-        if (vote != null) {
-            vote.setStatus(VoteStatus.REJECTED);
-            voteRepository.save(vote);
-            log.warn(">>> SAGA FAILED: Голос {} отклонен. Причина: {} <<<", voteId, reason);
-        }
+        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE_NAME, "wallet.reserved", event);
     }
 
     @Transactional
     public void deleteArchivedVote(Long voteId, String txHash) {
         if (voteRepository.existsById(voteId)) {
             voteRepository.deleteById(voteId);
-            log.info("🗑️ Голос {} перенесен в блокчейн (Tx: {}) и УДАЛЕН из БД.", voteId, txHash);
+            log.info("🗑Голос {} перенесен в блокчейн (Tx: {}) и удален из SQL.", voteId, txHash);
         }
     }
 }

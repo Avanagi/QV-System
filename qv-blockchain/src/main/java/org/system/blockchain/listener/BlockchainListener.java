@@ -52,7 +52,10 @@ public class BlockchainListener {
                 event.getUserId(),
                 event.getProjectId(),
                 event.getVoteCount(),
-                event.getCost()
+                event.getCost(),
+                event.getPollTitle(),
+                event.getOptionText(),
+                event.getPollId()
         );
     }
 }

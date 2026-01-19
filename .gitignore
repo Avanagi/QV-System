@@ -17,7 +17,7 @@ target/
 .apt_generated
 .classpath
 .factorypath
-.project
+.poll
 .settings
 .springBeans
 .sts4-cache

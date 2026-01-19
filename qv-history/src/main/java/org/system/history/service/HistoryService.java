@@ -31,6 +31,9 @@ public class HistoryService {
                 event.getVoteCount(),
                 event.getCost(),
                 event.getTxHash(),
+                event.getPollId(),
+                event.getPollTitle(),
+                event.getOptionText(),
                 event.getTimestamp().toString()
         );
 

@@ -15,5 +15,8 @@ public class HistoryRecord implements Serializable {
     private Integer voteCount;
     private BigDecimal cost;
     private String txHash;
+    private Long pollId;
+    private String pollTitle;
+    private String optionText;
     private String timestamp;
 }

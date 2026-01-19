@@ -17,5 +17,8 @@ public class VoteArchivedEvent implements Serializable {
     private Integer voteCount;
     private BigDecimal cost;
     private String txHash;
+    private String pollTitle;
+    private String optionText;
+    private Long pollId;
     private LocalDateTime timestamp;
 }
