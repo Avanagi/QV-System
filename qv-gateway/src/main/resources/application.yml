@@ -1,5 +1,6 @@
 server:
   port: 8080
+  forward-headers-strategy: framework
 
 spring:
   application:
@@ -22,19 +23,16 @@ spring:
           enabled: true
           lower-case-service-id: true
       routes:
-        # 1. Голосование (Voting Service)
         - id: voting-route
           uri: lb://VOTING-SERVICE
           predicates:
             - Path=/api/votes/**
 
-        # 2. Проекты (Voting Service)
         - id: projects-route
           uri: lb://VOTING-SERVICE
           predicates:
             - Path=/api/projects/**
 
-        # 3. История (History Service)
         - id: history-route
           uri: lb://HISTORY-SERVICE
           predicates:
@@ -42,13 +40,40 @@ spring:
           filters:
             - RewritePath=/api/history/(?<segment>.*), /history/$\{segment}
 
-        # 4. Авторизация (Wallet Service)
         - id: auth-route
           uri: lb://WALLET-SERVICE
           predicates:
             - Path=/api/auth/**
           filters:
             - RewritePath=/api/auth/(?<segment>.*), /api/wallet/$\{segment}
+
+        - id: voting-docs
+          uri: lb://VOTING-SERVICE
+          predicates:
+            - Path=/v3/api-docs/voting
+          filters:
+            - RewritePath=/v3/api-docs/voting, /v3/api-docs
+
+        - id: wallet-docs
+          uri: lb://WALLET-SERVICE
+          predicates:
+             - Path=/v3/api-docs/wallet
+          filters:
+             - RewritePath=/v3/api-docs/wallet, /v3/api-docs
+
+        - id: history-docs
+          uri: lb://HISTORY-SERVICE
+          predicates:
+            - Path=/v3/api-docs/history
+          filters:
+            - RewritePath=/v3/api-docs/history, /v3/api-docs
+
+        - id: blockchain-docs
+          uri: lb://BLOCKCHAIN-SERVICE
+          predicates:
+             - Path=/v3/api-docs/blockchain
+          filters:
+             - RewritePath=/v3/api-docs/blockchain, /v3/api-docs
 
 eureka:
   client:
@@ -62,3 +87,18 @@ management:
   zipkin:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: 'Voting Service'
+        url: /v3/api-docs/voting
+      - name: 'Wallet Service'
+        url: /v3/api-docs/wallet
+      - name: 'History Service'
+        url: /v3/api-docs/history
+      - name: 'Blockchain Service'
+        url: /v3/api-docs/blockchain
+  api-docs:
+    enabled: true

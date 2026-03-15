@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.system.wallet.entity.Wallet;
 import org.system.wallet.repository.WalletRepository;
+import org.system.wallet.dto.LoginRequest;
 
 import java.math.BigDecimal;
 
@@ -48,5 +49,14 @@ public class WalletController {
 
         log.info("Списано {} QV у пользователя {}", amount, userId);
         return ResponseEntity.ok("Списано");
+    }
+
+    @PostMapping("/login/web")
+    public ResponseEntity<?> webLogin(@RequestBody LoginRequest request) {
+        if ("user".equals(request.getUsername()) && "password".equals(request.getPassword())) {
+            return loginOrRegister(777L);
+        }
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Неверный логин или пароль");
     }
 }
