@@ -25,10 +25,10 @@ eureka:
     prefer-ip-address: true
 
 app:
-  # sync = REST подход
-  # async = Saga RabbitMQ подход
   architecture: async
   wallet-url: http://wallet-service:8082/api/wallet/charge
+  poll-cost: 50.00
+  max-budget: 100.0
 
 management:
   tracing:
@@ -37,3 +37,10 @@ management:
   zipkin:
     tracing:
       endpoint: http://zipkin:9411/api/v2/spans
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+    metrics:
+      tags:
+        application: ${spring.application.name}

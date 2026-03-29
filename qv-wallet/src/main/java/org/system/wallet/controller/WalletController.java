@@ -2,13 +2,17 @@ package org.system.wallet.controller;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.system.wallet.dto.AuthResponse;
 import org.system.wallet.entity.Wallet;
 import org.system.wallet.repository.WalletRepository;
 import org.system.wallet.dto.LoginRequest;
+import org.system.wallet.util.JwtUtil;
 
 import java.math.BigDecimal;
 
@@ -18,19 +22,23 @@ import java.math.BigDecimal;
 @Slf4j
 public class WalletController {
 
+    @Value("${app.initial-balance:1000.00}")
+    private BigDecimal initialBalance;
+
     private final WalletRepository walletRepository;
+    private final JwtUtil jwtUtil;
 
     @PostMapping("/login/{telegramId}")
     @Transactional
-    public ResponseEntity<Wallet> loginOrRegister(@PathVariable Long telegramId) {
-        return ResponseEntity.ok(
-                walletRepository.findById(telegramId)
-                        .orElseGet(() -> {
-                            log.info("Регистрация нового пользователя: {}", telegramId);
-                            Wallet newWallet = new Wallet(telegramId, new BigDecimal("1000.00"));
-                            return walletRepository.save(newWallet);
-                        })
-        );
+    public ResponseEntity<AuthResponse> loginOrRegister(@PathVariable Long telegramId) {
+        Wallet wallet = walletRepository.findById(telegramId)
+                .orElseGet(() -> {
+                    log.info("Регистрация нового пользователя: {}. Баланс: {}", telegramId, initialBalance);
+                    return walletRepository.save(new Wallet(telegramId, initialBalance));
+                });
+
+        String token = jwtUtil.generateToken(wallet.getUserId());
+        return ResponseEntity.ok(new AuthResponse(wallet, token));
     }
 
     @PostMapping("/charge")

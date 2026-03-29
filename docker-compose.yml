@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   qv-network:
     driver: bridge
@@ -10,7 +8,6 @@ volumes:
   geth_data2:
 
 services:
-
   geth-node1:
     image: ethereum/client-go:v1.10.26
     container_name: qv-geth-1
@@ -19,12 +16,18 @@ services:
       - sh
       - -c
       - |
-        if [ ! -d /root/.ethereum/geth ]; then
-          geth init /root/genesis.json
-        fi
-        geth --networkid 777 --http --http.addr "0.0.0.0" --http.api "eth,net,web3,personal,miner,admin" --http.corsdomain "*" --http.vhosts "*" --mine --miner.threads 1 --miner.etherbase "0x123463a4b065722e99115d6c222f267d9cabb524" --allow-insecure-unlock --nodiscover
+        echo "--- НАСТРОЙКА GETH ---"
+        echo '4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d' > /root/pk.txt
+        echo '123456' > /root/password.txt
+        
+        geth --datadir /root/.ethereum account import --password /root/password.txt /root/pk.txt
+        
+        geth --datadir /root/.ethereum init /root/config/genesis.json
+        
+        echo "--- ЗАПУСК МАЙНЕРА ---"
+        geth --datadir /root/.ethereum --networkid 777 --http --http.addr "0.0.0.0" --http.api "eth,net,web3,personal,miner,admin,clique" --http.corsdomain "geth-node1,localhost" --http.vhosts "geth-node1,localhost" --mine --miner.etherbase "0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1" --unlock "0x90F8bf6A479f320ead074411a4B0e7944Ea8c9C1" --password /root/password.txt --allow-insecure-unlock --nodiscover
     volumes:
-      - ./blockchain-config/genesis.json:/root/genesis.json
+      - ./blockchain-config:/root/config
       - geth_data1:/root/.ethereum
     ports:
       - "8545:8545"
@@ -33,22 +36,20 @@ services:
       - qv-network
 
   geth-node2:
-    image: ethereum/client-go:v1.10.26
-    container_name: qv-geth-2
-    hostname: geth-node2
-    entrypoint:
-      - sh
-      - -c
-      - |
-        if [ ! -d /root/.ethereum/geth ]; then
-          geth init /root/genesis.json
-        fi
-        geth --networkid 777 --port 30304 --mine --miner.threads 1 --miner.etherbase "0x123463a4b065722e99115d6c222f267d9cabb524" --nodiscover
-    volumes:
-      - ./blockchain-config/genesis.json:/root/genesis.json
-      - geth_data2:/root/.ethereum
-    networks:
-      - qv-network
+      image: ethereum/client-go:v1.10.26
+      container_name: qv-geth-2
+      hostname: geth-node2
+      entrypoint:
+        - sh
+        - -c
+        - |
+          geth --datadir /root/.ethereum init /root/config/genesis.json
+          geth --datadir /root/.ethereum --networkid 777 --port 30304 --nodiscover
+      volumes:
+        - ./blockchain-config:/root/config
+        - geth_data2:/root/.ethereum
+      networks:
+        - qv-network
 
   explorer:
     image: alethio/ethereum-lite-explorer
@@ -62,6 +63,7 @@ services:
         condition: service_started
     networks:
       - qv-network
+
 
   postgres:
     image: postgres:15-alpine
@@ -114,6 +116,7 @@ services:
     networks:
       - qv-network
 
+
   discovery:
     build: ./qv-discovery
     container_name: qv-discovery
@@ -129,6 +132,7 @@ services:
       - "8080:8080"
     environment:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://qv-zipkin:9411/api/v2/spans
     depends_on:
       - discovery
     networks:
@@ -143,6 +147,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: password
       SPRING_RABBITMQ_HOST: rabbitmq
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://qv-zipkin:9411/api/v2/spans
     depends_on:
       postgres:
         condition: service_started
@@ -162,6 +167,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: password
       SPRING_RABBITMQ_HOST: rabbitmq
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://qv-zipkin:9411/api/v2/spans
     depends_on:
       postgres:
         condition: service_started
@@ -181,6 +187,7 @@ services:
       EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery:8761/eureka/
       BLOCKCHAIN_RPC_URL: http://geth-node1:8545
       BLOCKCHAIN_PRIVATE_KEY: 4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://qv-zipkin:9411/api/v2/spans
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -214,5 +221,27 @@ services:
     container_name: qv-frontend
     ports:
       - "3000:80"
+    networks:
+      - qv-network
+
+  prometheus:
+    image: prom/prometheus
+    container_name: qv-prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - qv-network
+
+  grafana:
+    image: grafana/grafana
+    container_name: qv-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    depends_on:
+      - prometheus
     networks:
       - qv-network

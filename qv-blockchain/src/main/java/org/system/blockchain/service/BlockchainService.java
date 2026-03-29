@@ -6,16 +6,19 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.system.blockchain.config.BlockchainRabbitConfig;
+import org.system.blockchain.contract.QVStorage;
 import org.system.common.event.VoteArchivedEvent;
 import org.web3j.crypto.Credentials;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameterName;
 import org.web3j.protocol.http.HttpService;
-import org.web3j.tx.RawTransactionManager;
+import org.web3j.protocol.core.methods.request.EthFilter;
+import org.web3j.tx.FastRawTransactionManager; // <--- НОВЫЙ ИМПОРТ
+import org.web3j.tx.TransactionManager;
+import org.web3j.tx.gas.StaticGasProvider;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
 @Service
@@ -28,9 +31,14 @@ public class BlockchainService {
     @Value("${blockchain.private-key}")
     private String privateKey;
 
-    private Web3j web3j;
-    private Credentials credentials;
+    @Value("${blockchain.bytecode}")
+    private String contractBytecode;
 
+    @Value("${blockchain.contract-address}")
+    private String contractAddress;
+
+    private Web3j web3j;
+    private QVStorage qvContract;
     private final RabbitTemplate rabbitTemplate;
 
     public BlockchainService(RabbitTemplate rabbitTemplate) {
@@ -39,49 +47,83 @@ public class BlockchainService {
 
     @PostConstruct
     public void init() {
-        this.web3j = Web3j.build(new HttpService(rpcUrl));
-        this.credentials = Credentials.create(privateKey);
-
-        log.info("============== BLOCKCHAIN IDENTITY CHECK ==============");
-        log.info("RPC URL: {}", rpcUrl);
-        log.info("Java использует адрес: {}", credentials.getAddress());
-        log.info("=======================================================");
-
         try {
-            var balance = web3j.ethGetBalance(credentials.getAddress(), DefaultBlockParameterName.LATEST).send();
-            log.info("💰 Баланс майнера (wei): {}", balance.getBalance());
+            this.web3j = Web3j.build(new HttpService(rpcUrl));
+            Credentials credentials = Credentials.create(privateKey);
+            long currentChainId = web3j.ethChainId().send().getChainId().longValue();
+
+            // --- ИСПРАВЛЕНИЕ: ИСПОЛЬЗУЕМ FAST MANAGER ---
+            // Он кэширует Nonce локально, что позволяет отправлять сотни транзакций асинхронно
+            // без ошибки "Nonce too low".
+            TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, currentChainId);
+
+            StaticGasProvider gasProvider = new StaticGasProvider(
+                    BigInteger.valueOf(22_000_000_000L),
+                    BigInteger.valueOf(3_000_000L) // Лимит 3 млн для деплоя
+            );
+
+            log.info("============== SMART CONTRACT INIT ==============");
+            if (contractAddress == null || contractAddress.isBlank()) {
+                log.info("Начинаю деплой смарт-контракта...");
+                String hexBytecode = contractBytecode.startsWith("0x") ? contractBytecode : "0x" + contractBytecode;
+
+                // Деплой оставляем синхронным (.send()), так как без него нельзя работать дальше
+                this.qvContract = QVStorage.deploy(web3j, txManager, gasProvider, hexBytecode).send();
+
+                log.info("🎉 КОНТРАКТ УСПЕШНО РАЗВЕРНУТ!");
+                log.warn("⚠️ АДРЕС: {} (Сохраните его в application.yml)", qvContract.getContractAddress());
+            } else {
+                log.info("Загрузка существующего контракта по адресу: {}", contractAddress);
+                this.qvContract = QVStorage.load(contractAddress, web3j, txManager, gasProvider);
+            }
+            org.web3j.protocol.core.methods.request.EthFilter filter =
+                    new org.web3j.protocol.core.methods.request.EthFilter(
+                            DefaultBlockParameterName.LATEST,
+                            DefaultBlockParameterName.LATEST,
+                            this.contractAddress
+                    );
+
+            web3j.ethLogFlowable(filter).subscribe(eventLog -> {
+                log.warn("🔥 [EVM EVENT] Блокчейн сгенерировал событие в блоке №{}!", eventLog.getBlockNumber());
+                log.info("🔗 TxHash события: {}", eventLog.getTransactionHash());
+                // Здесь в реальной Enterprise-системе происходит финализация транзакции
+                // и отправка сообщения в RabbitMQ на удаление из SQL.
+                // Мы выводим это в лог для демонстрации на защите диплома.
+            }, error -> {
+                log.error("Ошибка при прослушивании EVM: ", error);
+            });
+            log.info("===============================================");
         } catch (Exception e) {
-            log.error("Не удалось проверить баланс при старте", e);
+            log.error("❌ ОШИБКА ИНИЦИАЛИЗАЦИИ БЛОКЧЕЙНА: {}", e.getMessage());
+            throw new RuntimeException("Не удалось инициализировать смарт-контракт", e);
         }
     }
 
     public void writeVoteToBlockchain(Long voteId, Long userId, Long optionId, Integer voteCount, BigDecimal cost,
-                                     String pollTitle, String optionText, Long pollId) {
-        try {
-            String auditData = String.format("VOTE-CONFIRMED: ID=%d | User=%d | Project=%d | Cost=%s",
-                    voteId, userId, pollId, cost.toString());
+                                      String pollTitle, String optionText, Long pollId) {
 
-            String hexData = toHex(auditData);
+        log.info("🚀 Асинхронная отправка транзакции для голоса {}...", voteId);
 
-            long chainId = 777L;
-            RawTransactionManager manager = new RawTransactionManager(web3j, credentials, chainId);
+        // --- ИСПРАВЛЕНИЕ: АСИНХРОННЫЙ ВЫЗОВ (Reactive) ---
+        // Метод sendAsync() мгновенно возвращает CompletableFuture и освобождает поток RabbitMQ!
+        qvContract.saveVote(
+                BigInteger.valueOf(voteId),
+                BigInteger.valueOf(userId),
+                BigInteger.valueOf(pollId),
+                BigInteger.valueOf(optionId),
+                BigInteger.valueOf(voteCount),
+                BigInteger.valueOf(cost.longValue())
+        ).sendAsync().thenAccept(receipt -> {
 
-            var ethSendTransaction = manager.sendTransaction(
-                    BigInteger.valueOf(22_000_000_000L), // Gas Price
-                    BigInteger.valueOf(500_000L),        // Gas Limit
-                    credentials.getAddress(),            // Отправляем самому себе
-                    hexData,                             // Данные
-                    BigInteger.ZERO                      // Сумма 0
-            );
-
-            if (ethSendTransaction.hasError()) {
-                log.error("ОШИБКА БЛОКЧЕЙНА: {}", ethSendTransaction.getError().getMessage());
+            // Этот код выполнится в отдельном фоновом потоке,
+            // когда Geth смайнит блок (через 5 секунд).
+            if (!receipt.isStatusOK()) {
+                log.error("❌ СМАРТ-КОНТРАКТ ОТКЛОНИЛ ТРАНЗАКЦИЮ для голоса {}", voteId);
                 return;
             }
 
-            String txHash = ethSendTransaction.getTransactionHash();
-            log.info("ЗАПИСАНО В БЛОКЧЕЙН! TxHash: {}", txHash);
-            log.info("Данные: {}", auditData);
+            String txHash = receipt.getTransactionHash();
+            log.info("✅ БЛОК СМАЙНЕН! Голос {} зафиксирован. TxHash: {}", voteId, txHash);
 
             VoteArchivedEvent event = new VoteArchivedEvent(
                     voteId,
@@ -95,19 +137,12 @@ public class BlockchainService {
                     pollId,
                     LocalDateTime.now());
 
-            rabbitTemplate.convertAndSend(
-                    BlockchainRabbitConfig.EXCHANGE_NAME,
-                    "vote.archived",
-                    event
-            );
-            log.info("Отправлено событие vote.archived для ID: {}", voteId);
+            // Рассылаем события на удаление из SQL и добавление в Историю
+            rabbitTemplate.convertAndSend(BlockchainRabbitConfig.EXCHANGE_NAME, "vote.archived", event);
 
-        } catch (Exception e) {
-            log.error("Критическая ошибка Web3j: ", e);
-        }
-    }
-
-    private String toHex(String arg) {
-        return String.format("%040x", new BigInteger(1, arg.getBytes(StandardCharsets.UTF_8)));
+        }).exceptionally(ex -> {
+            log.error("❌ Сетевая ошибка при асинхронной отправке транзакции: ", ex);
+            return null;
+        });
     }
 }

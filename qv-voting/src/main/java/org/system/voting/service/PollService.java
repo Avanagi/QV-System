@@ -24,15 +24,18 @@ public class PollService {
 
     @Value("${app.wallet-url:http://wallet-service:8082/api/wallet/charge}")
     private String walletUrl;
+
+    @Value("${app.poll-cost:50.00}")
+    private BigDecimal pollCost;
+
     private final RestClient restClient = RestClient.create();
 
-    private static final BigDecimal POLL_COST = new BigDecimal("50.00");
 
     @Transactional
     public Poll createPoll(PollCreationRequest request) {
         try {
             var response = restClient.post()
-                    .uri(walletUrl + "?userId=" + request.getCreatorId() + "&amount=" + POLL_COST)
+                    .uri(walletUrl + "?userId=" + request.getCreatorId() + "&amount=" + pollCost)
                     .retrieve()
                     .toBodilessEntity();
         } catch (Exception e) {

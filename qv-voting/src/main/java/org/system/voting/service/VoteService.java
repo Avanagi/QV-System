@@ -3,6 +3,7 @@ package org.system.voting.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +31,8 @@ public class VoteService {
     private final PollParticipationRepository participationRepository;
     private final RabbitTemplate rabbitTemplate;
 
-    private static final double MAX_BUDGET = 100.0;
+    @Value("${app.max-budget:100.0}")
+    private double maxBudget;
 
     @Transactional
     public void submitBatchVote(VoteBatchRequest request) {
@@ -48,7 +50,7 @@ public class VoteService {
             totalCost += Math.pow(count, 2);
         }
 
-        if (totalCost > MAX_BUDGET) {
+        if (totalCost > maxBudget) {
             throw new RuntimeException("BUDGET_EXCEEDED: Превышен лимит 100 кредитов!");
         }
 

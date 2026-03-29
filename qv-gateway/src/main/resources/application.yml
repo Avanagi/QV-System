@@ -75,6 +75,11 @@ spring:
           filters:
              - RewritePath=/v3/api-docs/blockchain, /v3/api-docs
 
+        - id: config-route
+          uri: lb://VOTING-SERVICE
+          predicates:
+              - Path=/api/config/**
+
 eureka:
   client:
     service-url:
@@ -87,11 +92,18 @@ management:
   zipkin:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+    metrics:
+      tags:
+        application: ${spring.application.name}
 
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
-    urls:
+    URLs:
       - name: 'Voting Service'
         url: /v3/api-docs/voting
       - name: 'Wallet Service'

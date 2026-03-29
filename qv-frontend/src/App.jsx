@@ -21,8 +21,15 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import LogoutIcon from '@mui/icons-material/Logout';
 
 const API_URL = '/api';
-const MAX_BUDGET = 100;
 const ADMIN_ID = 0;
+
+axios.interceptors.request.use((config) => {
+    const token = localStorage.getItem('jwt_token');
+    if (token) {
+        config.headers['Authorization'] = 'Bearer ' + token;
+    }
+    return config;
+});
 
 function App() {
     const [view, setView] = useState('loading');
@@ -30,25 +37,28 @@ function App() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [username, setUsername] = useState('');
 
-    const [myUnlockedPolls, setMyUnlockedPolls] = useState([]);
-    const [myCreatedPolls, setMyCreatedPolls] = useState([]);
+    const [appConfig, setAppConfig] = useState({ maxBudget: 100, pollCost: 50 });
+
+    const[myUnlockedPolls, setMyUnlockedPolls] = useState([]);
+    const[myCreatedPolls, setMyCreatedPolls] = useState([]);
     const [statsMap, setStatsMap] = useState({});
-    const [history, setHistory] = useState([]);
+    const[history, setHistory] = useState([]);
 
     const [activePoll, setActivePoll] = useState(null);
     const [adminTab, setAdminTab] = useState(0);
 
-    const [loginId, setLoginId] = useState('');
+    const[loginId, setLoginId] = useState('');
+    const [loginUsername, setLoginUsername] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+
     const [newTitle, setNewTitle] = useState('');
     const [newDesc, setNewDesc] = useState('');
-    const [newOptions, setNewOptions] = useState(['', '']);
+    const[newOptions, setNewOptions] = useState(['', '']);
     const [createdCode, setCreatedCode] = useState(null);
     const [searchCode, setSearchCode] = useState('');
     const [votes, setVotes] = useState({});
 
-    const [loginUsername, setLoginUsername] = useState('');
-    const [loginPassword, setLoginPassword] = useState('');
-
+    // --- INIT ---
     useEffect(() => {
         const initApp = async () => {
             if (window.Telegram?.WebApp?.initDataUnsafe?.user) {
@@ -61,45 +71,47 @@ function App() {
             }
         };
         initApp();
-    }, []);
+    },[]);
+
+    useEffect(() => {
+        let interval;
+        if (view === 'my-created' && myCreatedPolls.length > 0) {
+            interval = setInterval(() => {
+                myCreatedPolls.forEach(async (p) => {
+                    try {
+                        const statsRes = await axios.get(`${API_URL}/history/stats/${p.id}`);
+                        setStatsMap(prev => ({...prev, [p.id]: statsRes.data}));
+                    } catch (e) {
+                    }
+                });
+            }, 3000);
+        }
+        return () => clearInterval(interval);
+    },[view, myCreatedPolls]);
+
+    const loadAppConfiguration = async () => {
+        try {
+            const res = await axios.get(`${API_URL}/config`);
+            setAppConfig(res.data);
+            console.log("Конфигурация сервера загружена:", res.data);
+        } catch (e) {
+            console.warn("Не удалось загрузить конфиг с сервера, используем значения по умолчанию (100/50)");
+        }
+    };
 
     const performTgLogin = async (id) => {
         try {
             const res = await axios.post(`${API_URL}/auth/login/${id}`);
-            completeLogin(res.data);
+            localStorage.setItem('jwt_token', res.data.token);
+            await completeLogin(res.data.user);
         } catch (e) {
             alert("Ошибка TG входа");
+            setView('login');
         }
     };
 
     const performWebLogin = async () => {
         if (loginUsername === 'admin' && loginPassword === 'admin') {
-            setIsAdmin(true);
-            setUser({ userId: 0, balance: '∞' });
-            setView('admin');
-            return;
-        }
-
-        try {
-            const res = await axios.post(`${API_URL}/auth/login/web`, {
-                username: loginUsername,
-                password: loginPassword
-            });
-            completeLogin(res.data);
-        } catch (e) {
-            alert("Неверный логин или пароль");
-        }
-    };
-
-    const completeLogin = (userData) => {
-        setUser(userData);
-        if (!username) setUsername(`User ${userData.userId}`);
-        setIsAdmin(false);
-        setView('menu');
-    };
-
-    const performLogin = async (id) => {
-        if (Number(id) === ADMIN_ID) {
             setIsAdmin(true);
             setUser({ userId: ADMIN_ID, balance: '∞' });
             setView('admin');
@@ -107,22 +119,32 @@ function App() {
         }
 
         try {
-            const res = await axios.post(`${API_URL}/auth/login/${id}`);
-            setUser(res.data);
-            if (!username) setUsername(`User ${res.data.userId}`);
-            setIsAdmin(false);
-            setView('menu');
+            const res = await axios.post(`${API_URL}/auth/login/web`, {
+                username: loginUsername, password: loginPassword
+            });
+            localStorage.setItem('jwt_token', res.data.token);
+            await completeLogin(res.data.user);
         } catch (e) {
-            alert("Ошибка входа: " + e.message);
-            setView('login');
+            alert("Неверный логин или пароль");
         }
     };
 
-    // --- HELPERS ---
+    const completeLogin = async (userData) => {
+        setUser(userData);
+        if (!username) setUsername(`User ${userData.userId}`);
+        setIsAdmin(false);
+
+        await loadAppConfiguration();
+
+        setView('menu');
+    };
+
     const refreshUser = async () => {
         if (isAdmin) return;
-        const res = await axios.post(`${API_URL}/auth/login/${user.userId}`);
-        setUser(res.data);
+        try {
+            const res = await axios.post(`${API_URL}/auth/login/${user.userId}`);
+            setUser(res.data.user || res.data);
+        } catch (e) { console.error("Не удалось обновить пользователя"); }
     };
 
     const getGroupedHistory = () => {
@@ -136,7 +158,6 @@ function App() {
         return Object.values(groups).reverse();
     };
 
-    // --- ACTIONS ---
     const loadData = async (type) => {
         try {
             if (type === 'access') {
@@ -145,7 +166,6 @@ function App() {
             } else if (type === 'created') {
                 const res = await axios.get(`${API_URL}/projects/my/${user.userId}`);
                 setMyCreatedPolls(res.data);
-                // Load stats
                 const newStats = {};
                 await Promise.all(res.data.map(async (p) => {
                     try {
@@ -161,6 +181,7 @@ function App() {
         } catch(e) { console.error(e); }
     };
 
+    // --- ACTIONS ---
     const handleCreate = async () => {
         try {
             const opts = newOptions.filter(o => o.trim());
@@ -169,8 +190,8 @@ function App() {
                 title: newTitle, description: newDesc, creatorId: user.userId, options: opts
             });
             setCreatedCode(res.data.accessCode);
-            refreshUser();
-        } catch(e) { alert("Ошибка: " + (e.response?.data?.message || "Error")); }
+            setTimeout(refreshUser, 1000); // Обновляем баланс после оплаты
+        } catch(e) { alert("Ошибка: " + (e.response?.data?.message || e.response?.data || "Error")); }
     };
 
     const handleUnlock = async () => {
@@ -196,6 +217,21 @@ function App() {
             setTimeout(refreshUser, 2000);
         } catch(e) { alert(e.response?.data || "Error"); }
     };
+
+    const Header = ({ title, onBack }) => (
+        <AppBar position="static" color="transparent" elevation={0} sx={{mb: 2}}>
+            <Toolbar>
+                {onBack && (
+                    <IconButton edge="start" onClick={onBack} sx={{mr: 1}}>
+                        <ArrowBackIcon />
+                    </IconButton>
+                )}
+                <Typography variant="h6" sx={{flexGrow: 1, fontWeight: 'bold'}}>
+                    {title}
+                </Typography>
+            </Toolbar>
+        </AppBar>
+    );
 
     // --- VIEWS ---
 
@@ -224,77 +260,48 @@ function App() {
                     >
                         Войти
                     </Button>
-
                     <Typography variant="caption" display="block" mt={2} color="text.disabled">
-                        Demo: user / password <br/>
-                        Admin: admin / admin
+                        Demo: user / password <br/> Admin: admin / admin
                     </Typography>
                 </Paper>
             </Container>
         );
     }
 
-    // --- ADMIN PANEL ---
     if (view === 'admin') {
         return (
             <Box sx={{height: '100vh', display: 'flex', flexDirection: 'column'}}>
                 <AppBar position="static" color="primary">
                     <Toolbar>
                         <AdminPanelSettingsIcon sx={{mr: 2}} />
-                        <Typography variant="h6" sx={{flexGrow: 1}}>Панель Администратора</Typography>
+                        <Typography variant="h6" sx={{flexGrow: 1}}>Админ Панель</Typography>
                         <IconButton color="inherit" onClick={() => setView('login')}><LogoutIcon /></IconButton>
                     </Toolbar>
                     <Tabs value={adminTab} onChange={(e, v) => setAdminTab(v)} textColor="inherit" indicatorColor="secondary" variant="fullWidth">
                         <Tab icon={<DashboardIcon />} label="Инфо" />
-                        <Tab icon={<ApiIcon />} label="API Docs (Swagger)" />
+                        <Tab icon={<ApiIcon />} label="API Docs" />
                     </Tabs>
                 </AppBar>
-
                 <Box sx={{flexGrow: 1, overflow: 'auto', p: 0}}>
                     {adminTab === 0 && (
                         <Container sx={{mt: 3}}>
                             <Typography variant="h5" gutterBottom>Статус системы</Typography>
                             <Grid container spacing={2}>
                                 <Grid item xs={12} md={6}>
-                                    <Card sx={{bgcolor: '#e3f2fd'}}>
-                                        <CardContent>
-                                            <Typography color="textSecondary">Микросервисы</Typography>
-                                            <Typography variant="h4">4 Активны</Typography>
-                                            <Typography variant="body2">Voting, Wallet, History, Blockchain</Typography>
-                                        </CardContent>
-                                    </Card>
+                                    <Card sx={{bgcolor: '#e3f2fd'}}><CardContent><Typography color="textSecondary">Микросервисы</Typography><Typography variant="h4">4 Активны</Typography></CardContent></Card>
                                 </Grid>
                                 <Grid item xs={12} md={6}>
-                                    <Card sx={{bgcolor: '#fff3e0'}}>
-                                        <CardContent>
-                                            <Typography color="textSecondary">Блокчейн</Typography>
-                                            <Typography variant="h4">Geth PoW</Typography>
-                                            <Typography variant="body2">Mining Active</Typography>
-                                        </CardContent>
-                                    </Card>
+                                    <Card sx={{bgcolor: '#fff3e0'}}><CardContent><Typography color="textSecondary">Блокчейн</Typography><Typography variant="h4">Geth PoA</Typography></CardContent></Card>
                                 </Grid>
                             </Grid>
-
-                            <Typography variant="h6" mt={4} gutterBottom>Быстрые действия</Typography>
-                            <Button variant="outlined" href="http://localhost:8761" target="_blank">Eureka</Button>
-                            <Button variant="outlined" href="http://localhost:15672" target="_blank" sx={{ml: 1}}>RabbitMQ</Button>
-                            <Button variant="outlined" href="http://localhost:9411" target="_blank" sx={{ml: 1}}>Zipkin</Button>
                         </Container>
                     )}
-
-                    {adminTab === 1 && (
-                        <iframe
-                            src="/webjars/swagger-ui/index.html"
-                            style={{width: '100%', height: '100%', border: 'none'}}
-                            title="API Docs"
-                        />
-                    )}
+                    {adminTab === 1 && <iframe src="/webjars/swagger-ui/index.html" style={{width: '100%', height: '100%', border: 'none'}} title="API Docs" />}
                 </Box>
             </Box>
         );
     }
 
-    // --- USER MENU ---
     if (view === 'menu') {
         return (
             <Container maxWidth="sm" sx={{ py: 4 }}>
@@ -316,16 +323,18 @@ function App() {
                         </Box>
                     </Paper>
                     <Button variant="contained" size="large" startIcon={<AddCircleOutlineIcon />} onClick={() => { setCreatedCode(null); setView('creator'); }}>
-                        Создать Опрос <Chip label="-50 QV" size="small" sx={{ml: 1, bgcolor: 'rgba(255,255,255,0.2)', color: 'white'}}/>
+                        Создать Опрос
+                        {/* ИСПОЛЬЗУЕМ ДИНАМИЧЕСКУЮ ЦЕНУ */}
+                        <Chip label={`-${appConfig.pollCost} QV`} size="small" sx={{ml: 1, bgcolor: 'rgba(255,255,255,0.2)', color: 'white'}}/>
                     </Button>
                     <Grid container spacing={2}>
                         <Grid item xs={6}>
-                            <Button variant="outlined" fullWidth size="large" startIcon={<HowToVoteIcon />} onClick={() => { setView('my-access'); loadData('access'); }}>
+                            <Button variant="outlined" fullWidth size="large" startIcon={<HowToVoteIcon />} onClick={() => { setView('my-access'); loadData('access'); }} sx={{ height: '100%', py: 2, borderRadius: 3 }}>
                                 Голосовать
                             </Button>
                         </Grid>
                         <Grid item xs={6}>
-                            <Button variant="outlined" fullWidth size="large" startIcon={<AssessmentIcon />} onClick={() => { setView('my-created'); loadData('created'); }}>
+                            <Button variant="outlined" fullWidth size="large" startIcon={<AssessmentIcon />} onClick={() => { setView('my-created'); loadData('created'); }} sx={{ height: '100%', py: 2, borderRadius: 3 }}>
                                 Мои опросы
                             </Button>
                         </Grid>
@@ -337,10 +346,6 @@ function App() {
         );
     }
 
-    // ... (Экраны CREATOR, VOTER, MY-CREATED, HISTORY остаются без изменений, скопируй их из прошлого ответа) ...
-    // Если нужно, я продублирую, но они не менялись.
-
-    // --- CREATOR ---
     if (view === 'creator') {
         if (createdCode) {
             return (
@@ -353,7 +358,7 @@ function App() {
         }
         return (
             <Container maxWidth="sm" sx={{mt: 2}}>
-                <AppBar position="static" color="transparent" elevation={0}><Toolbar><IconButton onClick={() => setView('menu')}><ArrowBackIcon /></IconButton><Typography variant="h6">Новый опрос</Typography></Toolbar></AppBar>
+                <Header title="Новый опрос" onBack={() => setView('menu')} />
                 <Stack spacing={2} mt={2}>
                     <TextField label="Заголовок" fullWidth value={newTitle} onChange={e => setNewTitle(e.target.value)} />
                     <TextField label="Описание" fullWidth multiline rows={3} value={newDesc} onChange={e => setNewDesc(e.target.value)} />
@@ -361,17 +366,17 @@ function App() {
                         <TextField key={i} size="small" placeholder={`Вариант ${i+1}`} fullWidth value={opt} onChange={e => { const a=[...newOptions]; a[i]=e.target.value; setNewOptions(a); }} />
                     ))}
                     <Button startIcon={<AddCircleOutlineIcon />} onClick={() => setNewOptions([...newOptions, ''])}>Добавить вариант</Button>
-                    <Button variant="contained" size="large" onClick={handleCreate} disabled={!newTitle}>Создать</Button>
+                    <Button variant="contained" size="large" onClick={handleCreate} disabled={!newTitle}>Создать ({appConfig.pollCost} QV)</Button>
                 </Stack>
             </Container>
         );
     }
 
-    // --- VOTING LIST ---
     if (view === 'my-access') {
         return (
             <Container maxWidth="sm">
-                <AppBar position="static" color="transparent" elevation={0}><Toolbar><IconButton onClick={() => setView('menu')}><ArrowBackIcon /></IconButton><Typography variant="h6">Доступные мне</Typography></Toolbar></AppBar>
+                <Header title="Доступные мне" onBack={() => setView('menu')} />
+                {myUnlockedPolls.length === 0 && <Typography align="center" mt={4} color="text.secondary">Нет опросов. Введите код в меню.</Typography>}
                 <Stack spacing={2} mt={2}>
                     {myUnlockedPolls.map(poll => (
                         <Card key={poll.id} elevation={2}><CardContent>
@@ -385,15 +390,18 @@ function App() {
         );
     }
 
-    // --- VOTING ---
     if (view === 'voting' && activePoll) {
         const used = Object.values(votes).reduce((sum, v) => sum + v*v, 0);
-        const remaining = MAX_BUDGET - used;
+        const remaining = appConfig.maxBudget - used;
+
         return (
             <Container maxWidth="sm" sx={{ pb: 10 }}>
-                <AppBar position="static" color="transparent" elevation={0}><Toolbar><IconButton onClick={() => setView('my-access')}><ArrowBackIcon /></IconButton><Typography variant="h6">{activePoll.title}</Typography></Toolbar></AppBar>
+                <Header title={activePoll.title} onBack={() => setView('my-access')} />
                 <Paper elevation={4} sx={{ position: 'sticky', top: 10, zIndex: 100, p: 2, mb: 3, borderRadius: 3, bgcolor: remaining < 0 ? '#ffebee' : '#e8f5e9' }}>
-                    <Box display="flex" justifyContent="space-between"><Typography>Бюджет:</Typography><Typography variant="h6" color={remaining < 0 ? 'error' : 'success.main'}>{remaining} / 100</Typography></Box>
+                    <Box display="flex" justifyContent="space-between">
+                        <Typography>Бюджет:</Typography>
+                        <Typography variant="h6" color={remaining < 0 ? 'error' : 'success.main'}>{remaining} / {appConfig.maxBudget} QV</Typography>
+                    </Box>
                 </Paper>
                 <Stack spacing={2}>
                     {activePoll.options.map(opt => {
@@ -401,24 +409,30 @@ function App() {
                         return (
                             <Card key={opt.id} variant="outlined"><CardContent>
                                 <Typography variant="subtitle1">{opt.text}</Typography>
-                                <Box display="flex" alignItems="center" gap={2}><Slider value={val} min={0} max={10} step={1} marks onChange={(e, v) => { const diff = v*v - val*val; if (used + diff <= MAX_BUDGET) setVotes({...votes, [opt.id]: v}); }} sx={{ flexGrow: 1 }} /><Typography variant="h6">{val}</Typography></Box>
+                                <Box display="flex" alignItems="center" gap={2}>
+                                    <Slider value={val} min={0} max={10} step={1} marks onChange={(e, v) => {
+                                        const diff = v*v - val*val;
+                                        if (used + diff <= appConfig.maxBudget) setVotes({...votes, [opt.id]: v});
+                                    }} sx={{ flexGrow: 1 }} />
+                                    <Typography variant="h6">{val}</Typography>
+                                </Box>
                                 <Typography variant="caption" color="text.secondary">Цена: <b>{val*val}</b> QV</Typography>
                             </CardContent></Card>
                         );
                     })}
                 </Stack>
                 <Box position="fixed" bottom={0} left={0} right={0} p={2} bgcolor="white" borderTop="1px solid #eee">
-                    <Button variant="contained" fullWidth size="large" disabled={used === 0 || remaining < 0} onClick={submitVotes}>Отправить</Button>
+                    <Button variant="contained" fullWidth size="large" disabled={used === 0 || remaining < 0} onClick={submitVotes}>Отправить ({used} QV)</Button>
                 </Box>
             </Container>
         );
     }
 
-    // --- MY CREATED ---
     if (view === 'my-created') {
         return (
             <Container maxWidth="sm">
-                <AppBar position="static" color="transparent" elevation={0}><Toolbar><IconButton onClick={() => setView('menu')}><ArrowBackIcon /></IconButton><Typography variant="h6">Я создал</Typography></Toolbar></AppBar>
+                <Header title="Я создал" onBack={() => setView('menu')} />
+                {myCreatedPolls.length === 0 && <Typography align="center" mt={4}>Вы еще не создавали опросов</Typography>}
                 <Stack spacing={2} mt={2}>
                     {myCreatedPolls.map(p => {
                         const stat = statsMap[p.id];
@@ -449,17 +463,17 @@ function App() {
         );
     }
 
-    // --- HISTORY ---
     if (view === 'history') {
         const grouped = getGroupedHistory();
         return (
-            <Container maxWidth="sm">
-                <AppBar position="static" color="transparent" elevation={0}><Toolbar><IconButton onClick={() => setView('menu')}><ArrowBackIcon /></IconButton><Typography variant="h6">История</Typography></Toolbar></AppBar>
+            <Container maxWidth="sm" sx={{mt: 2, pb: 5}}>
+                <Header title="Блокчейн-лог" onBack={() => setView('menu')} />
+                {grouped.length === 0 && <Typography align="center" mt={4}>История пуста</Typography>}
                 {grouped.map((g, i) => (
                     <Paper key={i} sx={{ mb: 2, overflow: 'hidden' }}>
-                        <Box bgcolor="#e3f2fd" p={2} display="flex" justifyContent="space-between"><Typography fontWeight="bold">{g.title}</Typography><Chip label={`${g.totalCost.toFixed(0)} QV`} size="small"/></Box>
+                        <Box bgcolor="#e3f2fd" p={2} display="flex" justifyContent="space-between"><Typography fontWeight="bold">{g.title}</Typography><Chip label={`${Number(g.totalCost).toFixed(0)} QV`} size="small"/></Box>
                         <List dense>{g.items.map((h, k) => (
-                            <div key={k}><ListItem><ListItemText primary={h.optionText} secondary={`Голосов: ${h.voteCount} • Tx: ${h.txHash ? h.txHash.substring(0,6)+'...' : '...'}`}/></ListItem><Divider/></div>
+                            <div key={k}><ListItem><ListItemText primary={h.optionText} secondary={`Голосов: ${h.voteCount} • Tx: ${h.txHash ? h.txHash.substring(0,8)+'...' : '...'}`}/></ListItem><Divider/></div>
                         ))}</List>
                     </Paper>
                 ))}

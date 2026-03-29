@@ -28,6 +28,7 @@ app:
   chaos:
     enabled: false
     rate: 0.1
+  initial-balance: 1000.00
 
 management:
   tracing:
@@ -36,3 +37,14 @@ management:
   zipkin:
     tracing:
       endpoint: http://zipkin:9411/api/v2/spans
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+    metrics:
+      tags:
+        application: ${spring.application.name}
+
+jwt:
+  secret: "KzR1aW1ZRXBIV1FXT1VOWDFMVjNncUJzeE1uWkF6c0V5bHBCbXBPZU1tcz0"
+  expiration-ms: 86400000
