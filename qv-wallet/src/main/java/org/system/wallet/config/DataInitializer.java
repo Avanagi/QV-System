@@ -1,3 +1,4 @@
+/*
 package org.system.wallet.config;
 
 import lombok.RequiredArgsConstructor;
@@ -22,3 +23,4 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 }
+*/

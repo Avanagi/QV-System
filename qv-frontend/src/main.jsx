@@ -3,34 +3,29 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import { createTheme, ThemeProvider, CssBaseline } from '@mui/material'
 
-const theme = createTheme({
+const darkTheme = createTheme({
     palette: {
-        mode: 'light',
+        mode: 'dark',
         primary: {
-            main: '#2481cc',
+            main: '#90caf9',
         },
         secondary: {
-            main: '#e64d3d',
+            main: '#f48fb1',
         },
         background: {
-            default: '#f4f4f5',
-            paper: '#ffffff',
+            default: '#121212',
+            paper: '#1e1e1e',
         },
     },
-    typography: {
-        fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-        h5: { fontWeight: 600 },
-        h6: { fontWeight: 500 },
-    },
     shape: {
-        borderRadius: 12,
+        borderRadius: 16,
     },
 });
 
 ReactDOM.createRoot(document.getElementById('root')).render(
     <React.StrictMode>
-        <ThemeProvider theme={theme}>
-            <CssBaseline /> {/* Сброс CSS браузера */}
+        <ThemeProvider theme={darkTheme}>
+            <CssBaseline />
             <App />
         </ThemeProvider>
     </React.StrictMode>,

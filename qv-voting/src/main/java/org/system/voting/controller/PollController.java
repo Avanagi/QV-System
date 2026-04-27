@@ -34,4 +34,9 @@ public class PollController {
     public List<Poll> getCreatedByMe(@PathVariable Long creatorId) {
         return pollService.getCreatedByMe(creatorId);
     }
+
+    @GetMapping("/public")
+    public List<Poll> getPublicPolls() {
+        return pollService.getPublicPolls();
+    }
 }

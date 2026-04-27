@@ -30,19 +30,24 @@ public class PollService {
 
     private final RestClient restClient = RestClient.create();
 
-
     @Transactional
     public Poll createPoll(PollCreationRequest request) {
         try {
-            var response = restClient.post()
+            restClient.post()
                     .uri(walletUrl + "?userId=" + request.getCreatorId() + "&amount=" + pollCost)
                     .retrieve()
                     .toBodilessEntity();
         } catch (Exception e) {
-            throw new RuntimeException("Ошибка оплаты создания опроса: " + e.getMessage());
+            throw new RuntimeException("Payment error: " + e.getMessage());
         }
 
-        Poll poll = new Poll(request.getTitle(), request.getDescription(), request.getCreatorId());
+        Poll poll = new Poll(
+                request.getTitle(),
+                request.getDescription(),
+                request.getCreatorId(),
+                request.getVoteType(),
+                request.isPublic()
+        );
 
         if (request.getOptions() != null && !request.getOptions().isEmpty()) {
             for (String optionText : request.getOptions()) {
@@ -56,7 +61,7 @@ public class PollService {
 
     public Poll getByCode(String code) {
         return pollRepository.findByAccessCode(code.toUpperCase())
-                .orElseThrow(() -> new RuntimeException("Опрос с таким кодом не найден"));
+                .orElseThrow(() -> new RuntimeException("Not found"));
     }
 
     @Transactional
@@ -74,5 +79,9 @@ public class PollService {
 
     public List<Poll> getCreatedByMe(Long creatorId) {
         return pollRepository.findAllByCreatorId(creatorId);
+    }
+
+    public List<Poll> getPublicPolls() {
+        return pollRepository.findAllByIsPublicTrue();
     }
 }

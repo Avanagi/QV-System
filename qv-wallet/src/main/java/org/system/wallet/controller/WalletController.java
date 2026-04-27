@@ -1,44 +1,74 @@
 package org.system.wallet.controller;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.bind.annotation.*;
 import org.system.wallet.dto.AuthResponse;
+import org.system.wallet.dto.LoginRequest;
+import org.system.wallet.dto.RegisterRequest;
 import org.system.wallet.entity.Wallet;
 import org.system.wallet.repository.WalletRepository;
-import org.system.wallet.dto.LoginRequest;
 import org.system.wallet.util.JwtUtil;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/wallet")
 @RequiredArgsConstructor
-@Slf4j
 public class WalletController {
-
-    @Value("${app.initial-balance:1000.00}")
-    private BigDecimal initialBalance;
 
     private final WalletRepository walletRepository;
     private final JwtUtil jwtUtil;
 
-    @PostMapping("/login/{telegramId}")
+    @Value("${app.initial-balance:1000.00}")
+    private BigDecimal initialBalance;
+
+    @PostMapping("/login/tg/{telegramId}")
     @Transactional
-    public ResponseEntity<AuthResponse> loginOrRegister(@PathVariable Long telegramId) {
-        Wallet wallet = walletRepository.findById(telegramId)
-                .orElseGet(() -> {
-                    log.info("Регистрация нового пользователя: {}. Баланс: {}", telegramId, initialBalance);
-                    return walletRepository.save(new Wallet(telegramId, initialBalance));
-                });
+    public ResponseEntity<AuthResponse> loginTg(@PathVariable Long telegramId, @RequestParam String username) {
+        Wallet wallet = walletRepository.findByTelegramId(telegramId)
+                .orElseGet(() -> walletRepository.save(
+                        new Wallet(username, null, telegramId, initialBalance)
+                ));
 
         String token = jwtUtil.generateToken(wallet.getUserId());
         return ResponseEntity.ok(new AuthResponse(wallet, token));
+    }
+
+    @PostMapping("/register")
+    @Transactional
+    public ResponseEntity<?> registerWeb(@RequestBody RegisterRequest request) {
+        if (walletRepository.findByUsername(request.getUsername()).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body("Username exists");
+        }
+
+        String hashedPassword = DigestUtils.md5DigestAsHex(request.getPassword().getBytes());
+        Wallet wallet = new Wallet(request.getUsername(), hashedPassword, null, initialBalance);
+        walletRepository.save(wallet);
+
+        String token = jwtUtil.generateToken(wallet.getUserId());
+        return ResponseEntity.ok(new AuthResponse(wallet, token));
+    }
+
+    @PostMapping("/login/web")
+    public ResponseEntity<?> loginWeb(@RequestBody LoginRequest request) {
+        Optional<Wallet> walletOpt = walletRepository.findByUsername(request.getUsername());
+
+        if (walletOpt.isPresent()) {
+            Wallet wallet = walletOpt.get();
+            String hashedPassword = DigestUtils.md5DigestAsHex(request.getPassword().getBytes());
+
+            if (hashedPassword.equals(wallet.getPassword())) {
+                String token = jwtUtil.generateToken(wallet.getUserId());
+                return ResponseEntity.ok(new AuthResponse(wallet, token));
+            }
+        }
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid credentials");
     }
 
     @PostMapping("/charge")
@@ -48,23 +78,19 @@ public class WalletController {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         if (wallet.getBalance().compareTo(amount) < 0) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("Недостаточно средств (нужно " + amount + " QV)");
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Insufficient funds");
         }
 
         wallet.setBalance(wallet.getBalance().subtract(amount));
         walletRepository.save(wallet);
 
-        log.info("Списано {} QV у пользователя {}", amount, userId);
-        return ResponseEntity.ok("Списано");
+        return ResponseEntity.ok("Charged");
     }
 
-    @PostMapping("/login/web")
-    public ResponseEntity<?> webLogin(@RequestBody LoginRequest request) {
-        if ("user".equals(request.getUsername()) && "password".equals(request.getPassword())) {
-            return loginOrRegister(777L);
-        }
-
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Неверный логин или пароль");
+    @GetMapping("/{userId}")
+    public ResponseEntity<Wallet> getWallet(@PathVariable Long userId) {
+        return walletRepository.findById(userId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 }

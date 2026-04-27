@@ -1,21 +1,19 @@
 package org.system.voting.service;
 
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClient;
 import org.system.common.event.FundsReservedEvent;
 import org.system.voting.config.RabbitConfig;
 import org.system.voting.dto.VoteBatchRequest;
-import org.system.voting.entity.Option;
-import org.system.voting.entity.PollParticipation;
-import org.system.voting.entity.Vote;
-import org.system.voting.entity.VoteStatus;
+import org.system.voting.entity.*;
 import org.system.voting.repository.OptionRepository;
 import org.system.voting.repository.PollParticipationRepository;
+import org.system.voting.repository.PollRepository;
 import org.system.voting.repository.VoteRepository;
 
 import java.math.BigDecimal;
@@ -23,51 +21,60 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class VoteService {
 
     private final VoteRepository voteRepository;
     private final OptionRepository optionRepository;
+    private final PollRepository pollRepository;
     private final PollParticipationRepository participationRepository;
     private final RabbitTemplate rabbitTemplate;
 
-    @Value("${app.max-budget:100.0}")
-    private double maxBudget;
+    @Value("${app.wallet-url:http://wallet-service:8082/api/wallet/charge}")
+    private String walletUrl;
+
+    private final RestClient restClient = RestClient.create();
 
     @Transactional
     public void submitBatchVote(VoteBatchRequest request) {
-        log.info("Batch Vote: User={}, Poll={}", request.getUserId(), request.getPollId());
+        Poll poll = pollRepository.findById(request.getPollId()).orElseThrow();
 
         try {
             participationRepository.saveAndFlush(new PollParticipation(request.getUserId(), request.getPollId()));
         } catch (DataIntegrityViolationException e) {
-            throw new RuntimeException("DOUBLE_VOTE: Вы уже голосовали в этом опросе!");
+            throw new RuntimeException("DOUBLE_VOTE");
         }
 
         double totalCost = 0;
-        for (Integer count : request.getVotes().values()) {
-            if (count < 0) throw new RuntimeException("Отрицательные голоса запрещены");
-            totalCost += Math.pow(count, 2);
+
+        for (Map.Entry<Long, Integer> entry : request.getVotes().entrySet()) {
+            Integer count = entry.getValue();
+            if (count < 0) throw new RuntimeException("Negative vote");
+            if (count == 0) continue;
+
+            if (poll.getVoteType() == VoteType.LINEAR) {
+                if (count > 1) throw new RuntimeException("Linear vote limit exceeded");
+                totalCost += count;
+            } else {
+                totalCost += Math.pow(count, 2);
+            }
         }
 
-        if (totalCost > maxBudget) {
-            throw new RuntimeException("BUDGET_EXCEEDED: Превышен лимит 100 кредитов!");
+        try {
+            restClient.post()
+                    .uri(walletUrl + "?userId=" + request.getUserId() + "&amount=" + totalCost)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            throw new RuntimeException("Insufficient global balance");
         }
 
         for (Map.Entry<Long, Integer> entry : request.getVotes().entrySet()) {
             Long optionId = entry.getKey();
             Integer count = entry.getValue();
-
             if (count == 0) continue;
 
-            Option option = optionRepository.findById(optionId)
-                    .orElseThrow(() -> new RuntimeException("Option not found: " + optionId));
-
-            if (!option.getPoll().getId().equals(request.getPollId())) {
-                throw new RuntimeException("HACK_ATTEMPT: Опция не принадлежит этому опросу");
-            }
-
-            double cost = Math.pow(count, 2);
+            Option option = optionRepository.findById(optionId).orElseThrow();
+            double cost = poll.getVoteType() == VoteType.LINEAR ? count : Math.pow(count, 2);
 
             Vote vote = new Vote();
             vote.setUserId(request.getUserId());
@@ -103,7 +110,6 @@ public class VoteService {
     public void deleteArchivedVote(Long voteId, String txHash) {
         if (voteRepository.existsById(voteId)) {
             voteRepository.deleteById(voteId);
-            log.info("🗑️ Голос {} перенесен в блокчейн и удален из SQL.", voteId);
         }
     }
 }

@@ -47,6 +47,11 @@ spring:
           filters:
             - RewritePath=/api/auth/(?<segment>.*), /api/wallet/$\{segment}
 
+        - id: wallet-route
+          uri: lb://WALLET-SERVICE
+          predicates:
+            - Path=/api/wallet/**
+
         - id: voting-docs
           uri: lb://VOTING-SERVICE
           predicates:
@@ -74,6 +79,11 @@ spring:
              - Path=/v3/api-docs/blockchain
           filters:
              - RewritePath=/v3/api-docs/blockchain, /v3/api-docs
+
+        - id: blockchain-explorer-route
+          uri: lb://BLOCKCHAIN-SERVICE
+          predicates:
+            - Path=/api/blockchain/**
 
         - id: config-route
           uri: lb://VOTING-SERVICE
