@@ -99,7 +99,7 @@ public class WalletService {
         if (wallet != null) {
             wallet.setBalance(wallet.getBalance().add(VOTE_REWARD));
             walletRepository.save(wallet);
-            log.info("💰 НАГРАДА: Пользователь {} получил {} QV за голос {}", userId, VOTE_REWARD, voteId);
+            log.info("НАГРАДА: Пользователь {} получил {} QV за голос {}", userId, VOTE_REWARD, voteId);
         }
     }
 }

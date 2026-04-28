@@ -26,8 +26,6 @@ public class JwtAuthFilter implements GlobalFilter, Ordered {
             return exchange.getResponse().setComplete();
         }
 
-        // В идеале здесь валидировать токен через jjwt.
-
         return chain.filter(exchange);
     }
 

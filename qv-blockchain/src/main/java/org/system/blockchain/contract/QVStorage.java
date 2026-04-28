@@ -1,8 +1,6 @@
 package org.system.blockchain.contract;
 
-import org.web3j.abi.TypeReference;
 import org.web3j.abi.datatypes.Function;
-import org.web3j.abi.datatypes.Type;
 import org.web3j.abi.datatypes.generated.Uint256;
 import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.RemoteCall;
@@ -29,7 +27,7 @@ public class QVStorage extends Contract {
 
         final Function function = new Function(
                 "saveVote",
-                Arrays.<Type>asList(
+                Arrays.asList(
                         new Uint256(_voteId),
                         new Uint256(_userId),
                         new Uint256(_pollId),
@@ -37,7 +35,7 @@ public class QVStorage extends Contract {
                         new Uint256(_voteCount),
                         new Uint256(_cost)
                 ),
-                Collections.<TypeReference<?>>emptyList());
+                Collections.emptyList());
 
         return executeRemoteCallTransaction(function);
     }

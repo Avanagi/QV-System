@@ -213,7 +213,6 @@ function App() {
         if (!user) return;
         try {
             if (tabIndex === 0) {
-                // ИСПРАВЛЕНИЕ №1: Принудительная загрузка публичных опросов
                 const res = await axios.get(`${API_URL}/projects/public`);
                 setPublicPolls(res.data);
             } else if (tabIndex === 1) {
@@ -261,7 +260,6 @@ function App() {
         } catch (e) { alert("Код не найден"); }
     };
 
-    // ИСПРАВЛЕНИЕ №3: Очистка формы после создания опроса
     const handleCreateSubmit = async () => {
         try {
             const filtered = newOptions.filter(o => o.trim() !== '');
@@ -272,7 +270,6 @@ function App() {
             });
             setCreatedCode(res.data.accessCode);
 
-            // Очищаем форму для следующего раза
             setNewTitle('');
             setNewDesc('');
             setNewOptions(['', '']);

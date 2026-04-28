@@ -41,7 +41,7 @@ public class BlockchainListener {
                 .setIfAbsent(idempotencyKey, "1", Duration.ofHours(24));
 
         if (Boolean.FALSE.equals(isNew)) {
-            log.warn("ДУБЛИКАТ: Транзакция для голоса {} уже была отправлена в блокчейн. Пропускаем.", event.getVoteId());
+            log.warn("Транзакция для голоса {} уже была отправлена в блокчейн. Пропускаем.", event.getVoteId());
             return;
         }
 

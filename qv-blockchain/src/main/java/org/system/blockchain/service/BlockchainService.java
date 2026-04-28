@@ -52,14 +52,11 @@ public class BlockchainService {
             Credentials credentials = Credentials.create(privateKey);
             long currentChainId = web3j.ethChainId().send().getChainId().longValue();
 
-            // --- ИСПРАВЛЕНИЕ: ИСПОЛЬЗУЕМ FAST MANAGER ---
-            // Он кэширует Nonce локально, что позволяет отправлять сотни транзакций асинхронно
-            // без ошибки "Nonce too low".
             TransactionManager txManager = new FastRawTransactionManager(web3j, credentials, currentChainId);
 
             StaticGasProvider gasProvider = new StaticGasProvider(
                     BigInteger.valueOf(22_000_000_000L),
-                    BigInteger.valueOf(3_000_000L) // Лимит 3 млн для деплоя
+                    BigInteger.valueOf(3_000_000L)
             );
 
             log.info("============== SMART CONTRACT INIT ==============");
@@ -67,7 +64,6 @@ public class BlockchainService {
                 log.info("Начинаю деплой смарт-контракта...");
                 String hexBytecode = contractBytecode.startsWith("0x") ? contractBytecode : "0x" + contractBytecode;
 
-                // Деплой оставляем синхронным (.send()), так как без него нельзя работать дальше
                 this.qvContract = QVStorage.deploy(web3j, txManager, gasProvider, hexBytecode).send();
 
                 log.info("🎉 КОНТРАКТ УСПЕШНО РАЗВЕРНУТ!");
@@ -86,9 +82,6 @@ public class BlockchainService {
             web3j.ethLogFlowable(filter).subscribe(eventLog -> {
                 log.warn("🔥 [EVM EVENT] Блокчейн сгенерировал событие в блоке №{}!", eventLog.getBlockNumber());
                 log.info("🔗 TxHash события: {}", eventLog.getTransactionHash());
-                // Здесь в реальной Enterprise-системе происходит финализация транзакции
-                // и отправка сообщения в RabbitMQ на удаление из SQL.
-                // Мы выводим это в лог для демонстрации на защите диплома.
             }, error -> {
                 log.error("Ошибка при прослушивании EVM: ", error);
             });
@@ -104,8 +97,6 @@ public class BlockchainService {
 
         log.info("🚀 Асинхронная отправка транзакции для голоса {}...", voteId);
 
-        // --- ИСПРАВЛЕНИЕ: АСИНХРОННЫЙ ВЫЗОВ (Reactive) ---
-        // Метод sendAsync() мгновенно возвращает CompletableFuture и освобождает поток RabbitMQ!
         qvContract.saveVote(
                 BigInteger.valueOf(voteId),
                 BigInteger.valueOf(userId),
@@ -115,15 +106,13 @@ public class BlockchainService {
                 BigInteger.valueOf(cost.longValue())
         ).sendAsync().thenAccept(receipt -> {
 
-            // Этот код выполнится в отдельном фоновом потоке,
-            // когда Geth смайнит блок (через 5 секунд).
             if (!receipt.isStatusOK()) {
-                log.error("❌ СМАРТ-КОНТРАКТ ОТКЛОНИЛ ТРАНЗАКЦИЮ для голоса {}", voteId);
+                log.error("СМАРТ-КОНТРАКТ ОТКЛОНИЛ ТРАНЗАКЦИЮ для голоса {}", voteId);
                 return;
             }
 
             String txHash = receipt.getTransactionHash();
-            log.info("✅ БЛОК СМАЙНЕН! Голос {} зафиксирован. TxHash: {}", voteId, txHash);
+            log.info("БЛОК СМАЙНЕН! Голос {} зафиксирован. TxHash: {}", voteId, txHash);
 
             VoteArchivedEvent event = new VoteArchivedEvent(
                     voteId,
@@ -137,7 +126,6 @@ public class BlockchainService {
                     pollId,
                     LocalDateTime.now());
 
-            // Рассылаем события на удаление из SQL и добавление в Историю
             rabbitTemplate.convertAndSend(BlockchainRabbitConfig.EXCHANGE_NAME, "vote.archived", event);
 
         }).exceptionally(ex -> {

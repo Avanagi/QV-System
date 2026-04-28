@@ -1,6 +1,7 @@
 package org.system.voting.entity;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -28,6 +29,7 @@ public class Poll {
     @Enumerated(EnumType.STRING)
     private VoteType voteType;
 
+    @JsonProperty("isPublic")
     private boolean isPublic;
 
     @OneToMany(mappedBy = "poll", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
